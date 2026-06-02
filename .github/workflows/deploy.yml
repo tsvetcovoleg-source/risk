@@ -19,14 +19,23 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Check cPanel SSH connectivity
+        id: cpanel_ssh
         run: |
           echo "Checking TCP connectivity to ${CPANEL_HOST}:${CPANEL_PORT}"
-          nc -vz -w 20 "${CPANEL_HOST}" "${CPANEL_PORT}"
+
+          if nc -vz -w 20 "${CPANEL_HOST}" "${CPANEL_PORT}"; then
+            echo "reachable=true" >> "${GITHUB_OUTPUT}"
+            echo "cPanel SSH endpoint is reachable."
+          else
+            echo "reachable=false" >> "${GITHUB_OUTPUT}"
+            echo "::warning::cPanel SSH endpoint is not reachable from the GitHub runner. Test deploy will be skipped. Check CPANEL_HOST, CPANEL_PORT, SSH access, and hosting firewall allowlists."
+          fi
         env:
           CPANEL_HOST: ${{ secrets.CPANEL_HOST }}
           CPANEL_PORT: ${{ secrets.CPANEL_PORT }}
 
       - name: Deploy to test folder
+        if: steps.cpanel_ssh.outputs.reachable == 'true'
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.CPANEL_HOST }}
@@ -38,6 +47,12 @@ jobs:
           target: "/home/pubquest/public_html/risk.mindgames.md/test/"
           overwrite: true
           timeout: 120s
+
+      - name: Explain skipped test deploy
+        if: steps.cpanel_ssh.outputs.reachable == 'false'
+        run: |
+          echo "Test deploy was skipped because the cPanel SSH endpoint is unreachable from GitHub Actions."
+          echo "The application build can still be reviewed in the PR, but the hosting firewall/SSH settings must be fixed before remote deployment can run."
 
   deploy-production:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

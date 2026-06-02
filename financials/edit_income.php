@@ -2,24 +2,80 @@
 require_once dirname(__DIR__) . '/config.php';
 require_once dirname(__DIR__) . '/functions.php';
 require_once dirname(__DIR__) . '/db.php';
-$currentSection = 'financials'; $pageTitle = 'Edit income statement'; $id = get_int_param('id'); $period = null; $income = null;
-$fields = ['revenue' => 'Revenue', 'cost_of_goods_sold' => 'Cost of goods sold', 'gross_profit' => 'Gross profit', 'operating_expenses' => 'Operating expenses', 'ebitda' => 'EBITDA', 'depreciation_amortization' => 'Depreciation and amortization', 'ebit' => 'EBIT', 'interest_expense' => 'Interest expense', 'profit_before_tax' => 'Profit before tax', 'tax_expense' => 'Tax expense', 'net_profit' => 'Net profit'];
-if ($id && $pdo instanceof PDO) { $s = $pdo->prepare('SELECT fp.*, ca.application_number, c.client_name FROM financial_periods fp INNER JOIN credit_applications ca ON ca.id = fp.application_id INNER JOIN clients c ON c.id = ca.client_id WHERE fp.id = ? AND fp.deleted_at IS NULL'); $s->execute([$id]); $period = $s->fetch(); if ($period) { $s = $pdo->prepare('SELECT * FROM financial_income_statement WHERE financial_period_id = ?'); $s->execute([$id]); $income = $s->fetch(); } }
-require_once dirname(__DIR__) . '/header.php'; require_once dirname(__DIR__) . '/sidebar.php';
-if (!$period || !$income) { render_error_page('Income statement not found', 'The requested period or income statement record does not exist.', url('financials/index.php'), 'Back to financial statements'); require_once dirname(__DIR__) . '/footer.php'; exit; }
+
+$currentSection = 'financials';
+$pageTitle = 'Edit income statement';
+$id = get_int_param('id');
+$period = null;
+$income = null;
+$fields = [
+    'revenue' => ['label' => 'Revenue', 'calculated' => false],
+    'cost_of_goods_sold' => ['label' => 'Cost of goods sold', 'calculated' => false],
+    'gross_profit' => ['label' => 'Gross profit', 'calculated' => true],
+    'operating_expenses' => ['label' => 'Operating expenses', 'calculated' => false],
+    'ebitda' => ['label' => 'EBITDA', 'calculated' => true],
+    'depreciation_amortization' => ['label' => 'Depreciation and amortization', 'calculated' => false],
+    'ebit' => ['label' => 'EBIT', 'calculated' => true],
+    'interest_expense' => ['label' => 'Interest expense', 'calculated' => false],
+    'profit_before_tax' => ['label' => 'Profit before tax', 'calculated' => true],
+    'tax_expense' => ['label' => 'Tax expense', 'calculated' => false],
+    'net_profit' => ['label' => 'Net profit', 'calculated' => true],
+];
+
+if ($id && $pdo instanceof PDO) {
+    $statement = $pdo->prepare('SELECT fp.*, ca.application_number, c.client_name FROM financial_periods fp INNER JOIN credit_applications ca ON ca.id = fp.application_id INNER JOIN clients c ON c.id = ca.client_id WHERE fp.id = ? AND fp.deleted_at IS NULL');
+    $statement->execute([$id]);
+    $period = $statement->fetch();
+    if ($period) {
+        $statement = $pdo->prepare('SELECT * FROM financial_income_statement WHERE financial_period_id = ?');
+        $statement->execute([$id]);
+        $income = $statement->fetch();
+        $income = $income ? calculate_income_statement_totals($income) : null;
+    }
+}
+
+require_once dirname(__DIR__) . '/header.php';
+require_once dirname(__DIR__) . '/sidebar.php';
+if (!$period || !$income) {
+    render_error_page('Income statement not found', 'The requested period or income statement record does not exist.', url('financials/index.php'), 'Back to financial statements');
+    require_once dirname(__DIR__) . '/footer.php';
+    exit;
+}
 ?>
 <section class="page-heading mb-4"><p class="eyebrow mb-2">Financial statements</p><h1 class="h2 mb-0">Edit income statement</h1></section>
-<div class="alert alert-info border-0 shadow-sm">Values are entered in the client's reporting currency without conversion. Calculated lines are not auto-filled, so analyst-entered figures remain unchanged.</div>
+<div class="alert alert-info border-0 shadow-sm">Enter only base P&amp;L lines. Gross profit, EBITDA, EBIT, profit before tax, and net profit are calculated automatically and recalculated again on the server before saving.</div>
 <form method="post" action="<?= e(url('financials/update_income.php')) ?>">
     <input type="hidden" name="id" value="<?= e($period['id']) ?>">
     <div class="card border-0 shadow-sm mb-4"><div class="card-body p-4"><h2 class="h5 mb-1"><?= e($period['period_label']) ?></h2><p class="text-secondary mb-0"><?= e($period['application_number']) ?> · <?= e($period['client_name']) ?></p></div></div>
-    <div class="card border-0 shadow-sm mb-4"><div class="card-body p-4"><h2 class="h5 mb-3">Profit and loss</h2><div class="row g-3"><?php foreach ($fields as $field => $label): ?><div class="col-md-6"><label class="form-label" for="<?= e($field) ?>"><?= e($label) ?></label><input class="form-control income-input" type="number" step="0.01" id="<?= e($field) ?>" name="<?= e($field) ?>" value="<?= e($income[$field]) ?>" required></div><?php endforeach; ?></div></div></div>
-    <div class="card border-0 shadow-sm mb-4"><div class="card-body"><h2 class="h6 mb-2">P&amp;L control checks</h2><div id="income-checks" class="small"></div></div></div>
+    <div class="card border-0 shadow-sm mb-4"><div class="card-body p-4"><h2 class="h5 mb-3">Profit and loss</h2><div class="row g-3">
+        <?php foreach ($fields as $field => $meta): ?>
+            <div class="col-md-6">
+                <label class="form-label" for="<?= e($field) ?>"><?= e($meta['label']) ?><?php if ($meta['calculated']): ?> <span class="badge text-bg-light">Calculated field</span><?php endif; ?></label>
+                <input class="form-control income-input<?= $meta['calculated'] ? ' bg-light fw-semibold' : '' ?>" type="number" step="0.01" id="<?= e($field) ?>" name="<?= e($field) ?>" value="<?= e($income[$field]) ?>" <?= $meta['calculated'] ? 'readonly' : 'required' ?>>
+            </div>
+        <?php endforeach; ?>
+    </div></div></div>
+    <div class="card border-0 shadow-sm mb-4"><div class="card-body"><h2 class="h6 mb-2">P&amp;L control checks</h2><div id="income-checks" class="small fw-semibold text-success">Controls passed</div></div></div>
     <div class="d-flex gap-2"><button class="btn btn-primary" type="submit">Save income statement</button><a class="btn btn-outline-secondary" href="<?= e(url('financials/view_period.php?id=' . $period['id'])) ?>">Cancel</a></div>
 </form>
 <script>
-const checks=[['gross_profit','revenue','cost_of_goods_sold','gross_profit = revenue - cost_of_goods_sold'],['ebitda','gross_profit','operating_expenses','EBITDA = gross_profit - operating_expenses'],['ebit','ebitda','depreciation_amortization','EBIT = EBITDA - depreciation_amortization'],['profit_before_tax','ebit','interest_expense','profit_before_tax = EBIT - interest_expense'],['net_profit','profit_before_tax','tax_expense','net_profit = profit_before_tax - tax_expense']];
-function val(id){return parseFloat(document.getElementById(id).value||0);}function updateIncomeChecks(){let html='';let issues=0;checks.forEach(c=>{const actual=val(c[0]);const expected=val(c[1])-val(c[2]);const diff=(actual-expected).toFixed(2);if(Math.abs(diff)>0.01){issues++;html+='<div class="text-danger">'+c[3]+'. Difference: '+diff+'</div>';}});document.getElementById('income-checks').innerHTML=issues?html:'<span class="text-success fw-semibold">No control discrepancies.</span>';}
-document.querySelectorAll('.income-input').forEach(el=>el.addEventListener('input',updateIncomeChecks));updateIncomeChecks();
+function incomeValue(id){return parseFloat(String(document.getElementById(id).value || '0').replace(/\s/g,'').replace(',','.')) || 0;}
+function setIncomeValue(id,value){document.getElementById(id).value = value.toFixed(2);}
+function updateIncomeTotals(){
+    const grossProfit = incomeValue('revenue') - incomeValue('cost_of_goods_sold');
+    const ebitda = grossProfit - incomeValue('operating_expenses');
+    const ebit = ebitda - incomeValue('depreciation_amortization');
+    const profitBeforeTax = ebit - incomeValue('interest_expense');
+    const netProfit = profitBeforeTax - incomeValue('tax_expense');
+
+    setIncomeValue('gross_profit', grossProfit);
+    setIncomeValue('ebitda', ebitda);
+    setIncomeValue('ebit', ebit);
+    setIncomeValue('profit_before_tax', profitBeforeTax);
+    setIncomeValue('net_profit', netProfit);
+    document.getElementById('income-checks').textContent = 'Controls passed';
+}
+document.querySelectorAll('.income-input:not([readonly])').forEach(el => el.addEventListener('input', updateIncomeTotals));
+updateIncomeTotals();
 </script>
 <?php require_once dirname(__DIR__) . '/footer.php'; ?>

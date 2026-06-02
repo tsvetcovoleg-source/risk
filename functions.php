@@ -172,6 +172,157 @@ function parse_decimal(mixed $value): ?string
     return number_format((float) $normalized, 2, '.', '');
 }
 
+
+function decimal_value(mixed $value): float
+{
+    $parsed = parse_decimal($value);
+
+    return $parsed === null ? 0.0 : (float) $parsed;
+}
+
+function calculate_balance_sheet_totals(array $data): array
+{
+    $data['total_current_assets'] =
+        decimal_value($data['cash_and_equivalents'] ?? 0)
+        + decimal_value($data['accounts_receivable'] ?? 0)
+        + decimal_value($data['inventory'] ?? 0)
+        + decimal_value($data['other_current_assets'] ?? 0);
+
+    $data['total_non_current_assets'] =
+        decimal_value($data['fixed_assets'] ?? 0)
+        + decimal_value($data['other_non_current_assets'] ?? 0);
+
+    $data['total_assets'] =
+        $data['total_current_assets']
+        + $data['total_non_current_assets'];
+
+    $data['total_current_liabilities'] =
+        decimal_value($data['short_term_debt'] ?? 0)
+        + decimal_value($data['accounts_payable'] ?? 0)
+        + decimal_value($data['other_current_liabilities'] ?? 0);
+
+    $data['total_non_current_liabilities'] =
+        decimal_value($data['long_term_debt'] ?? 0)
+        + decimal_value($data['other_non_current_liabilities'] ?? 0);
+
+    $data['total_liabilities_and_equity'] =
+        $data['total_current_liabilities']
+        + $data['total_non_current_liabilities']
+        + decimal_value($data['equity'] ?? 0);
+
+    return $data;
+}
+
+function calculate_income_statement_totals(array $data): array
+{
+    $data['gross_profit'] =
+        decimal_value($data['revenue'] ?? 0)
+        - decimal_value($data['cost_of_goods_sold'] ?? 0);
+
+    $data['ebitda'] =
+        $data['gross_profit']
+        - decimal_value($data['operating_expenses'] ?? 0);
+
+    $data['ebit'] =
+        $data['ebitda']
+        - decimal_value($data['depreciation_amortization'] ?? 0);
+
+    $data['profit_before_tax'] =
+        $data['ebit']
+        - decimal_value($data['interest_expense'] ?? 0);
+
+    $data['net_profit'] =
+        $data['profit_before_tax']
+        - decimal_value($data['tax_expense'] ?? 0);
+
+    return $data;
+}
+
+
+function persist_balance_sheet_totals(PDO $pdo, array $balance): array
+{
+    $balance = calculate_balance_sheet_totals($balance);
+    if (empty($balance['financial_period_id'])) {
+        return $balance;
+    }
+
+    $statement = $pdo->prepare(
+        'UPDATE financial_balance_sheet
+         SET total_current_assets = :total_current_assets,
+             total_non_current_assets = :total_non_current_assets,
+             total_assets = :total_assets,
+             total_current_liabilities = :total_current_liabilities,
+             total_non_current_liabilities = :total_non_current_liabilities,
+             total_liabilities_and_equity = :total_liabilities_and_equity
+         WHERE financial_period_id = :financial_period_id'
+    );
+    $statement->execute([
+        'total_current_assets' => $balance['total_current_assets'],
+        'total_non_current_assets' => $balance['total_non_current_assets'],
+        'total_assets' => $balance['total_assets'],
+        'total_current_liabilities' => $balance['total_current_liabilities'],
+        'total_non_current_liabilities' => $balance['total_non_current_liabilities'],
+        'total_liabilities_and_equity' => $balance['total_liabilities_and_equity'],
+        'financial_period_id' => $balance['financial_period_id'],
+    ]);
+
+    return $balance;
+}
+
+function persist_income_statement_totals(PDO $pdo, array $income): array
+{
+    $income = calculate_income_statement_totals($income);
+    if (empty($income['financial_period_id'])) {
+        return $income;
+    }
+
+    $statement = $pdo->prepare(
+        'UPDATE financial_income_statement
+         SET gross_profit = :gross_profit,
+             ebitda = :ebitda,
+             ebit = :ebit,
+             profit_before_tax = :profit_before_tax,
+             net_profit = :net_profit
+         WHERE financial_period_id = :financial_period_id'
+    );
+    $statement->execute([
+        'gross_profit' => $income['gross_profit'],
+        'ebitda' => $income['ebitda'],
+        'ebit' => $income['ebit'],
+        'profit_before_tax' => $income['profit_before_tax'],
+        'net_profit' => $income['net_profit'],
+        'financial_period_id' => $income['financial_period_id'],
+    ]);
+
+    return $income;
+}
+
+function has_nonzero_balance_base_values(array $balance): bool
+{
+    $fields = [
+        'cash_and_equivalents',
+        'accounts_receivable',
+        'inventory',
+        'other_current_assets',
+        'fixed_assets',
+        'other_non_current_assets',
+        'short_term_debt',
+        'accounts_payable',
+        'other_current_liabilities',
+        'long_term_debt',
+        'other_non_current_liabilities',
+        'equity',
+    ];
+
+    foreach ($fields as $field) {
+        if (abs(decimal_value($balance[$field] ?? 0)) > 0.01) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function balance_difference(float|int|string|null $totalAssets, float|int|string|null $totalLiabilitiesAndEquity): float
 {
     return round((float) $totalAssets - (float) $totalLiabilitiesAndEquity, 2);
@@ -179,6 +330,8 @@ function balance_difference(float|int|string|null $totalAssets, float|int|string
 
 function check_income_statement_consistency(array $income): array
 {
+    $income = calculate_income_statement_totals($income);
+
     $checks = [
         'gross_profit' => [
             'label' => 'gross_profit = revenue - cost_of_goods_sold',
@@ -229,6 +382,10 @@ function safe_divide(mixed $numerator, mixed $denominator): ?float
 
 function calculate_financial_ratios(array $balance, array $income, ?array $previousIncome = null): array
 {
+    $balance = calculate_balance_sheet_totals($balance);
+    $income = calculate_income_statement_totals($income);
+    $previousIncome = $previousIncome === null ? null : calculate_income_statement_totals($previousIncome);
+
     $totalDebt = (float) ($balance['short_term_debt'] ?? 0) + (float) ($balance['long_term_debt'] ?? 0);
     $quickAssets = (float) ($balance['cash_and_equivalents'] ?? 0) + (float) ($balance['accounts_receivable'] ?? 0);
 
@@ -896,10 +1053,12 @@ function get_application_full_context(PDO $pdo, $applicationId): array
         $statement = $pdo->prepare('SELECT * FROM financial_balance_sheet WHERE financial_period_id = ? LIMIT 1');
         $statement->execute([$latestFinancialPeriod['id']]);
         $latestBalanceSheet = $statement->fetch() ?: null;
+        $latestBalanceSheet = $latestBalanceSheet ? calculate_balance_sheet_totals($latestBalanceSheet) : null;
 
         $statement = $pdo->prepare('SELECT * FROM financial_income_statement WHERE financial_period_id = ? LIMIT 1');
         $statement->execute([$latestFinancialPeriod['id']]);
         $latestIncomeStatement = $statement->fetch() ?: null;
+        $latestIncomeStatement = $latestIncomeStatement ? calculate_income_statement_totals($latestIncomeStatement) : null;
 
         $statement = $pdo->prepare('SELECT * FROM financial_ratios WHERE application_id = ? AND financial_period_id = ? LIMIT 1');
         $statement->execute([$applicationId, $latestFinancialPeriod['id']]);

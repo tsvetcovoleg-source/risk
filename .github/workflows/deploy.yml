@@ -43,7 +43,7 @@ jobs:
           username: ${{ secrets.CPANEL_USER }}
           key: ${{ secrets.CPANEL_SSH_KEY }}
           passphrase: ${{ secrets.CPANEL_SSH_PASSPHRASE }}
-          source: "index.php,config.php,db.php,functions.php,header.php,footer.php,sidebar.php,assets,clients,applications,financials,collateral,scoring,committee,reports,logs,database"
+          source: "index.php,config.php,db.php,functions.php,header.php,footer.php,sidebar.php,assets,clients,applications,financials,ratios,collateral,scoring,memos,committee,reports,logs,database"
           target: "/home/pubquest/public_html/risk.mindgames.md/test/"
           overwrite: true
           timeout: 120s
@@ -78,7 +78,7 @@ jobs:
           username: ${{ secrets.CPANEL_USER }}
           key: ${{ secrets.CPANEL_SSH_KEY }}
           passphrase: ${{ secrets.CPANEL_SSH_PASSPHRASE }}
-          source: "index.php,config.php,db.php,functions.php,header.php,footer.php,sidebar.php,assets,clients,applications,financials,collateral,scoring,committee,reports,logs,database"
+          source: "index.php,config.php,db.php,functions.php,header.php,footer.php,sidebar.php,assets,clients,applications,financials,ratios,collateral,scoring,memos,committee,reports,logs,database"
           target: "/home/pubquest/public_html/risk.mindgames.md/"
           overwrite: true
           timeout: 120s

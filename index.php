@@ -106,45 +106,6 @@ $metrics = [
     ['label' => 'Applications sent to committee', 'value' => $metricValues['applications_sent_to_committee'], 'tone' => 'warning'],
     ['label' => 'Approved applications', 'value' => $metricValues['approved_applications'], 'tone' => 'success'],
     ['label' => 'Rejected applications', 'value' => $metricValues['rejected_applications'], 'tone' => 'danger'],
-    ['label' => 'Total financial periods', 'value' => $metricValues['total_financial_periods'], 'tone' => 'primary'],
-    ['label' => 'Applications with financial statements', 'value' => $metricValues['applications_with_financial_statements'], 'tone' => 'info'],
-    ['label' => 'Audited financial periods', 'value' => $metricValues['audited_financial_periods'], 'tone' => 'success'],
-    ['label' => 'Management account periods', 'value' => $metricValues['management_account_periods'], 'tone' => 'warning'],
-    ['label' => 'Total ratio records', 'value' => $metricValues['total_ratio_records'], 'tone' => 'primary'],
-    ['label' => 'Applications with calculated ratios', 'value' => $metricValues['applications_with_calculated_ratios'], 'tone' => 'success'],
-    ['label' => 'Periods without calculated ratios', 'value' => $metricValues['periods_without_calculated_ratios'], 'tone' => 'warning'],
-    ['label' => 'Total collateral items', 'value' => $metricValues['total_collateral_items'], 'tone' => 'primary'],
-    ['label' => 'Applications with collateral', 'value' => $metricValues['applications_with_collateral'], 'tone' => 'success'],
-    ['label' => 'Accepted collateral items', 'value' => $metricValues['accepted_collateral_items'], 'tone' => 'info'],
-    ['label' => 'Registered collateral items', 'value' => $metricValues['registered_collateral_items'], 'tone' => 'success'],
-    ['label' => 'Applications without collateral', 'value' => $metricValues['applications_without_collateral'], 'tone' => 'warning'],
-    ['label' => 'Total scoring results', 'value' => $metricValues['total_scoring_results'], 'tone' => 'primary'],
-    ['label' => 'Low risk applications', 'value' => $metricValues['low_risk_applications'], 'tone' => 'success'],
-    ['label' => 'Moderate risk applications', 'value' => $metricValues['moderate_risk_applications'], 'tone' => 'info'],
-    ['label' => 'Medium risk applications', 'value' => $metricValues['medium_risk_applications'], 'tone' => 'warning'],
-    ['label' => 'High risk applications', 'value' => $metricValues['high_risk_applications'], 'tone' => 'danger'],
-    ['label' => 'Very high risk applications', 'value' => $metricValues['very_high_risk_applications'], 'tone' => 'dark'],
-    ['label' => 'Expert override cases', 'value' => $metricValues['expert_override_cases'], 'tone' => 'warning'],
-    ['label' => 'Total credit memos', 'value' => $metricValues['total_credit_memos'], 'tone' => 'primary'],
-    ['label' => 'Applications without credit memo', 'value' => $metricValues['applications_without_credit_memo'], 'tone' => 'warning'],
-    ['label' => 'Memos recommended for approval', 'value' => $metricValues['memos_recommended_for_approval'], 'tone' => 'success'],
-    ['label' => 'Memos recommended for approval with conditions', 'value' => $metricValues['memos_recommended_for_approval_with_conditions'], 'tone' => 'info'],
-    ['label' => 'Memos recommended for rejection', 'value' => $metricValues['memos_recommended_for_rejection'], 'tone' => 'danger'],
-    ['label' => 'Memos requiring additional information', 'value' => $metricValues['memos_requiring_additional_information'], 'tone' => 'secondary'],
-    ['label' => 'Total committee decisions', 'value' => $metricValues['total_committee_decisions'], 'tone' => 'primary'],
-    ['label' => 'Approved committee decisions', 'value' => $metricValues['committee_approved_decisions'], 'tone' => 'success'],
-    ['label' => 'Approved with conditions', 'value' => $metricValues['committee_approved_with_conditions'], 'tone' => 'info'],
-    ['label' => 'Rejected committee decisions', 'value' => $metricValues['committee_rejected_decisions'], 'tone' => 'danger'],
-    ['label' => 'Postponed committee decisions', 'value' => $metricValues['committee_postponed_decisions'], 'tone' => 'warning'],
-    ['label' => 'Returned for revision', 'value' => $metricValues['committee_returned_for_revision'], 'tone' => 'secondary'],
-    ['label' => 'Applications without committee decision', 'value' => $metricValues['applications_without_committee_decision'], 'tone' => 'warning'],
-];
-
-$nextSteps = [
-    'Refine financial ratio thresholds and prepare inputs for the future scoring model',
-    'Enhance collateral valuation review and manual legal checklist',
-    'Enhance credit memo conditions, document checklist, and analyst quality review',
-    'Committee minutes printout, workflow controls, dashboards, and reports',
 ];
 
 require_once __DIR__ . '/header.php';
@@ -172,20 +133,5 @@ require_once __DIR__ . '/sidebar.php';
     <?php endforeach; ?>
 </div>
 
-<div class="card next-steps-card border-0 shadow-sm">
-    <div class="card-body p-4">
-        <h2 class="h5 mb-3">Next development steps</h2>
-        <div class="next-steps-grid">
-            <?php foreach ($nextSteps as $step): ?>
-                <div>
-                    <div class="next-step-item">
-                        <span class="check-marker">✓</span>
-                        <span><?= e($step) ?></span>
-                    </div>
-                </div>
-            <?php endforeach; ?>
-        </div>
-    </div>
-</div>
 <?php
 require_once __DIR__ . '/footer.php';

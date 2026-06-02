@@ -3,14 +3,7 @@ $menuItems = [
     'dashboard' => ['label' => 'Dashboard', 'path' => 'index.php'],
     'clients' => ['label' => 'Clients', 'path' => 'clients/index.php'],
     'applications' => ['label' => 'Applications', 'path' => 'applications/index.php'],
-    'financials' => ['label' => 'Financial statements', 'path' => 'financials/index.php'],
-    'ratios' => ['label' => 'Financial ratios', 'path' => 'ratios/index.php'],
-    'collateral' => ['label' => 'Collateral', 'path' => 'collateral/index.php'],
-    'scoring' => ['label' => 'Scoring', 'path' => 'scoring/index.php'],
-    'memos' => ['label' => 'Credit memos', 'path' => 'memos/index.php'],
     'committee' => ['label' => 'Committee', 'path' => 'committee/index.php'],
-    'reports' => ['label' => 'Reports', 'path' => 'reports/index.php'],
-    'logs' => ['label' => 'Logs', 'path' => 'logs/index.php'],
 ];
 ?>
 <aside class="sidebar">

@@ -13,7 +13,21 @@
 </div>
 <div class="col-md-3">
     <label class="form-label" for="idno">IDNO</label>
-    <input class="form-control" id="idno" name="idno" value="<?= e($client['idno'] ?? '') ?>">
+    <?php if (!empty($showFetchFinancialButton)): ?>
+        <div class="input-group">
+            <input class="form-control" id="idno" name="idno" inputmode="numeric" pattern="\d{5,20}" value="<?= e($client['idno'] ?? '') ?>">
+            <button
+                class="btn btn-outline-primary"
+                type="submit"
+                formaction="<?= e(url('clients/fetch_fin_data.php')) ?>"
+                formmethod="post"
+                formnovalidate
+            >Получить данные</button>
+        </div>
+        <div class="form-text">Создаст клиента и загрузит финансовые отчеты в fin_data.</div>
+    <?php else: ?>
+        <input class="form-control" id="idno" name="idno" value="<?= e($client['idno'] ?? '') ?>">
+    <?php endif; ?>
 </div>
 <div class="col-md-3">
     <label class="form-label" for="legal_form">Legal form</label>

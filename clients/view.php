@@ -9,6 +9,7 @@ $id = get_int_param('id');
 $client = null;
 $relatedParties = [];
 $applications = [];
+$finDataRows = [];
 
 if ($id !== null && $pdo instanceof PDO) {
     $statement = $pdo->prepare('SELECT * FROM clients WHERE id = ? AND deleted_at IS NULL');
@@ -23,6 +24,14 @@ if ($id !== null && $pdo instanceof PDO) {
         $statement = $pdo->prepare('SELECT * FROM credit_applications WHERE client_id = ? AND deleted_at IS NULL ORDER BY application_date DESC, id DESC');
         $statement->execute([$id]);
         $applications = $statement->fetchAll();
+
+        try {
+            $statement = $pdo->prepare('SELECT IDNO, REPORT_KEY, created_at, LENGTH(META_CSV) AS meta_size, LENGTH(BIL_CSV) AS bil_size, LENGTH(PNL_CSV) AS pnl_size, LENGTH(EQT_CSV) AS eqt_size, LENGTH(CF_CSV) AS cf_size FROM fin_data WHERE client_id = ? ORDER BY REPORT_KEY DESC');
+            $statement->execute([$id]);
+            $finDataRows = $statement->fetchAll();
+        } catch (PDOException) {
+            $finDataRows = [];
+        }
     }
 }
 
@@ -50,6 +59,14 @@ if (!$id || !$client) {
     </div>
 </section>
 
+<?php if (($_GET['fin_status'] ?? '') === 'loaded'): ?>
+    <div class="alert alert-success border-0 shadow-sm">Financial data loaded into fin_data: <?= e((int) ($_GET['fin_count'] ?? 0)) ?> report(s).</div>
+<?php elseif (($_GET['fin_status'] ?? '') === 'empty'): ?>
+    <div class="alert alert-warning border-0 shadow-sm">Client was created, but no public financial reports were found for this IDNO.</div>
+<?php elseif (!empty($_GET['fin_error'])): ?>
+    <div class="alert alert-danger border-0 shadow-sm"><?= e($_GET['fin_error']) ?></div>
+<?php endif; ?>
+
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-body p-4">
         <h2 class="h5 mb-3">Main client data</h2>
@@ -64,6 +81,34 @@ if (!$id || !$client) {
                     <div class="fw-semibold"><?= e($value ?: '-') ?></div>
                 </div>
             <?php endforeach; ?>
+        </div>
+    </div>
+</div>
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body p-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2 class="h5 mb-0">Financial data from Depozitar</h2>
+            <span class="badge text-bg-secondary"><?= e(count($finDataRows)) ?> report(s)</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light"><tr><th>IDNO</th><th>Report key</th><th>META</th><th>BIL</th><th>PNL</th><th>EQT</th><th>CF</th><th>Loaded at</th></tr></thead>
+                <tbody>
+                <?php if (empty($finDataRows)): ?><tr><td colspan="8" class="text-center text-secondary py-3">No fetched financial data in fin_data.</td></tr><?php endif; ?>
+                <?php foreach ($finDataRows as $row): ?>
+                    <tr>
+                        <td><?= e($row['IDNO'] ?? '-') ?></td>
+                        <td><?= e($row['REPORT_KEY'] ?? '-') ?></td>
+                        <td><?= e((int) ($row['meta_size'] ?? 0)) ?> bytes</td>
+                        <td><?= e((int) ($row['bil_size'] ?? 0)) ?> bytes</td>
+                        <td><?= e((int) ($row['pnl_size'] ?? 0)) ?> bytes</td>
+                        <td><?= e((int) ($row['eqt_size'] ?? 0)) ?> bytes</td>
+                        <td><?= e((int) ($row['cf_size'] ?? 0)) ?> bytes</td>
+                        <td><?= e(format_date($row['created_at'] ?? null, 'd.m.Y H:i')) ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
         </div>
     </div>
 </div>

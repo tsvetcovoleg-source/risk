@@ -5,7 +5,19 @@
  */
 
 const APP_NAME = 'SME Credit Decision System';
-const BASE_URL = '/';
+const APP_ASSET_VERSION = '2026.06.02.2';
+
+// Automatically detects the application base URL for root and subfolder deployments.
+$documentRoot = isset($_SERVER['DOCUMENT_ROOT']) ? str_replace('\\', '/', realpath($_SERVER['DOCUMENT_ROOT']) ?: $_SERVER['DOCUMENT_ROOT']) : '';
+$applicationRoot = str_replace('\\', '/', __DIR__);
+$detectedBaseUrl = '/';
+
+if ($documentRoot !== '' && strpos($applicationRoot, rtrim($documentRoot, '/')) === 0) {
+    $relativePath = trim(substr($applicationRoot, strlen(rtrim($documentRoot, '/'))), '/');
+    $detectedBaseUrl = $relativePath === '' ? '/' : '/' . $relativePath . '/';
+}
+
+define('BASE_URL', $detectedBaseUrl);
 
 // MySQL connection settings.
 const DB_HOST = 'localhost';

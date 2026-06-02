@@ -34,9 +34,9 @@ $nextSteps = [
     </p>
 </section>
 
-<div class="row g-3 g-xl-4 mb-4">
+<div class="metric-grid mb-4">
     <?php foreach ($metrics as $metric): ?>
-        <div class="col-12 col-md-6 col-xl">
+        <div class="metric-grid-item">
             <div class="card metric-card h-100 border-0 shadow-sm">
                 <div class="card-body">
                     <span class="metric-dot bg-<?= e($metric['tone']) ?>"></span>
@@ -48,12 +48,12 @@ $nextSteps = [
     <?php endforeach; ?>
 </div>
 
-<div class="card border-0 shadow-sm">
+<div class="card next-steps-card border-0 shadow-sm">
     <div class="card-body p-4">
         <h2 class="h5 mb-3">Next development steps</h2>
-        <div class="row g-3">
+        <div class="next-steps-grid">
             <?php foreach ($nextSteps as $step): ?>
-                <div class="col-12 col-lg-6">
+                <div>
                     <div class="next-step-item">
                         <span class="check-marker">✓</span>
                         <span><?= e($step) ?></span>

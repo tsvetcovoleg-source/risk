@@ -19,6 +19,11 @@ function url(string $path = ''): string
     return rtrim(BASE_URL, '/') . '/' . ltrim($path, '/');
 }
 
+function asset_url(string $path): string
+{
+    return url($path) . '?v=' . rawurlencode(APP_ASSET_VERSION);
+}
+
 function is_active_menu(string $section): string
 {
     global $currentSection;

@@ -1,8 +1,8 @@
-CREATE DATABASE IF NOT EXISTS sme_credit_system
+CREATE DATABASE IF NOT EXISTS pubquest_risk
 CHARACTER SET utf8mb4
 COLLATE utf8mb4_unicode_ci;
 
-USE sme_credit_system;
+USE pubquest_risk;
 
 CREATE TABLE IF NOT EXISTS system_settings (
     id INT AUTO_INCREMENT PRIMARY KEY,

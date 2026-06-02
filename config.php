@@ -1,17 +1,17 @@
 <?php
 /**
  * Basic configuration for the SME Credit Decision System.
- * Update database values before deploying to a real environment.
+ * Database values are configured for the target hosting environment.
  */
 
 const APP_NAME = 'SME Credit Decision System';
 const BASE_URL = '/';
 
-// MySQL connection placeholders.
-const DB_HOST = 'DB_HOST';
-const DB_NAME = 'DB_NAME';
-const DB_USER = 'DB_USER';
-const DB_PASS = 'DB_PASS';
+// MySQL connection settings.
+const DB_HOST = 'localhost';
+const DB_NAME = 'pubquest_risk';
+const DB_USER = 'pubquest_admin';
+const DB_PASS = '#7K{#iELyX[N';
 
 // Development error reporting. Disable display_errors in production.
 const APP_DEBUG = true;

@@ -26,6 +26,13 @@ $metricValues = [
     'accepted_collateral_items' => 0,
     'registered_collateral_items' => 0,
     'applications_without_collateral' => 0,
+    'total_scoring_results' => 0,
+    'low_risk_applications' => 0,
+    'moderate_risk_applications' => 0,
+    'medium_risk_applications' => 0,
+    'high_risk_applications' => 0,
+    'very_high_risk_applications' => 0,
+    'expert_override_cases' => 0,
 ];
 
 if ($pdo instanceof PDO) {
@@ -49,6 +56,13 @@ if ($pdo instanceof PDO) {
         'accepted_collateral_items' => "SELECT COUNT(*) FROM collateral WHERE deleted_at IS NULL AND pledge_status = 'accepted'",
         'registered_collateral_items' => "SELECT COUNT(*) FROM collateral WHERE deleted_at IS NULL AND pledge_status = 'registered'",
         'applications_without_collateral' => "SELECT COUNT(*) FROM credit_applications ca WHERE ca.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM collateral co WHERE co.application_id = ca.id AND co.deleted_at IS NULL)",
+        'total_scoring_results' => "SELECT COUNT(*) FROM scoring_results sr INNER JOIN credit_applications ca ON ca.id = sr.application_id WHERE ca.deleted_at IS NULL",
+        'low_risk_applications' => "SELECT COUNT(*) FROM scoring_results sr INNER JOIN credit_applications ca ON ca.id = sr.application_id WHERE ca.deleted_at IS NULL AND sr.risk_level = 'low'",
+        'moderate_risk_applications' => "SELECT COUNT(*) FROM scoring_results sr INNER JOIN credit_applications ca ON ca.id = sr.application_id WHERE ca.deleted_at IS NULL AND sr.risk_level = 'moderate'",
+        'medium_risk_applications' => "SELECT COUNT(*) FROM scoring_results sr INNER JOIN credit_applications ca ON ca.id = sr.application_id WHERE ca.deleted_at IS NULL AND sr.risk_level = 'medium'",
+        'high_risk_applications' => "SELECT COUNT(*) FROM scoring_results sr INNER JOIN credit_applications ca ON ca.id = sr.application_id WHERE ca.deleted_at IS NULL AND sr.risk_level = 'high'",
+        'very_high_risk_applications' => "SELECT COUNT(*) FROM scoring_results sr INNER JOIN credit_applications ca ON ca.id = sr.application_id WHERE ca.deleted_at IS NULL AND sr.risk_level = 'very_high'",
+        'expert_override_cases' => "SELECT COUNT(*) FROM scoring_results sr INNER JOIN credit_applications ca ON ca.id = sr.application_id WHERE ca.deleted_at IS NULL AND sr.expert_override = 1",
     ];
 
     foreach ($queries as $key => $query) {
@@ -78,12 +92,19 @@ $metrics = [
     ['label' => 'Accepted collateral items', 'value' => $metricValues['accepted_collateral_items'], 'tone' => 'info'],
     ['label' => 'Registered collateral items', 'value' => $metricValues['registered_collateral_items'], 'tone' => 'success'],
     ['label' => 'Applications without collateral', 'value' => $metricValues['applications_without_collateral'], 'tone' => 'warning'],
+    ['label' => 'Total scoring results', 'value' => $metricValues['total_scoring_results'], 'tone' => 'primary'],
+    ['label' => 'Low risk applications', 'value' => $metricValues['low_risk_applications'], 'tone' => 'success'],
+    ['label' => 'Moderate risk applications', 'value' => $metricValues['moderate_risk_applications'], 'tone' => 'info'],
+    ['label' => 'Medium risk applications', 'value' => $metricValues['medium_risk_applications'], 'tone' => 'warning'],
+    ['label' => 'High risk applications', 'value' => $metricValues['high_risk_applications'], 'tone' => 'danger'],
+    ['label' => 'Very high risk applications', 'value' => $metricValues['very_high_risk_applications'], 'tone' => 'dark'],
+    ['label' => 'Expert override cases', 'value' => $metricValues['expert_override_cases'], 'tone' => 'warning'],
 ];
 
 $nextSteps = [
     'Refine financial ratio thresholds and prepare inputs for the future scoring model',
     'Enhance collateral valuation review and manual legal checklist',
-    'SME scoring model and credit opinion templates',
+    'Credit opinion templates using calculated SME scoring outputs',
     'Credit committee workflow, audit logs, dashboards, and reports',
 ];
 

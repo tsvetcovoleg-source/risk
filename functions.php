@@ -1345,3 +1345,227 @@ function format_memo_text($text): string
 {
     return nl2br(e($text));
 }
+
+function committee_decision_options(): array
+{
+    return [
+        'approved' => 'Approved',
+        'approved_with_conditions' => 'Approved with conditions',
+        'rejected' => 'Rejected',
+        'postponed' => 'Postponed',
+        'returned_for_revision' => 'Returned for revision',
+    ];
+}
+
+function committee_vote_options(): array
+{
+    return [
+        'for' => 'For',
+        'against' => 'Against',
+        'abstain' => 'Abstain',
+        'conditional' => 'Conditional',
+    ];
+}
+
+function is_valid_committee_decision(?string $decision): bool
+{
+    return $decision !== null && array_key_exists($decision, committee_decision_options());
+}
+
+function is_valid_committee_vote(?string $vote): bool
+{
+    return $vote !== null && array_key_exists($vote, committee_vote_options());
+}
+
+function format_decision_label($decision): string
+{
+    if ($decision === null || $decision === '') {
+        return '-';
+    }
+
+    return committee_decision_options()[$decision] ?? (string) $decision;
+}
+
+function format_vote_label($vote): string
+{
+    if ($vote === null || $vote === '') {
+        return '-';
+    }
+
+    return committee_vote_options()[$vote] ?? (string) $vote;
+}
+
+function committee_decision_badge_class(?string $decision): string
+{
+    return match ($decision) {
+        'approved' => 'success',
+        'approved_with_conditions' => 'info',
+        'rejected' => 'danger',
+        'postponed' => 'warning',
+        'returned_for_revision' => 'secondary',
+        default => 'light',
+    };
+}
+
+function committee_vote_badge_class(?string $vote): string
+{
+    return match ($vote) {
+        'for' => 'success',
+        'against' => 'danger',
+        'abstain' => 'secondary',
+        'conditional' => 'info',
+        default => 'light',
+    };
+}
+
+function map_committee_decision_to_application_status($decision): string
+{
+    return match ($decision) {
+        'approved' => 'approved',
+        'approved_with_conditions' => 'approved_with_conditions',
+        'rejected' => 'rejected',
+        'postponed' => 'committee_review',
+        'returned_for_revision' => 'risk_review',
+        default => 'committee_review',
+    };
+}
+
+function validate_committee_decision($data, $application): array
+{
+    $errors = [];
+    $warnings = [];
+    $decision = clean_input($data['decision'] ?? '');
+    $committeeDate = clean_input($data['committee_date'] ?? '');
+    $approvedAmount = $data['approved_amount'] ?? null;
+    $approvedCurrency = clean_input($data['approved_currency'] ?? '');
+    $approvedTerm = $data['approved_term_months'] ?? null;
+    $conditions = clean_input($data['conditions'] ?? '');
+    $rejectionReason = clean_input($data['rejection_reason'] ?? '');
+    $decisionNotes = clean_input($data['decision_notes'] ?? '');
+
+    if ($committeeDate === '') {
+        $errors[] = 'Committee date is required.';
+    } elseif (!is_valid_date($committeeDate)) {
+        $errors[] = 'Committee date must be a valid date in YYYY-MM-DD format.';
+    }
+
+    if (!is_valid_committee_decision($decision)) {
+        $errors[] = 'Committee decision has an invalid value.';
+    }
+
+    if ($approvedCurrency !== '' && !in_array($approvedCurrency, ['MDL', 'EUR', 'USD'], true)) {
+        $errors[] = 'Approved currency has an invalid value.';
+    }
+
+    $amountValue = $approvedAmount === null || $approvedAmount === '' ? null : (float) $approvedAmount;
+    $termValue = $approvedTerm === null || $approvedTerm === '' ? null : (int) $approvedTerm;
+
+    if (in_array($decision, ['approved', 'approved_with_conditions'], true)) {
+        if ($amountValue === null) {
+            $errors[] = 'Approved amount is required for this decision.';
+        } elseif ($amountValue <= 0) {
+            $errors[] = 'Approved amount must be greater than zero.';
+        }
+        if ($approvedCurrency === '') {
+            $errors[] = 'Approved currency is required for this decision.';
+        }
+        if ($termValue === null) {
+            $errors[] = 'Approved term is required for this decision.';
+        } elseif ($termValue <= 0) {
+            $errors[] = 'Approved term must be greater than zero.';
+        }
+    }
+
+    if ($decision === 'approved_with_conditions' && $conditions === '') {
+        $errors[] = 'Conditions are required for approval with conditions.';
+    }
+
+    if ($decision === 'rejected' && $rejectionReason === '') {
+        $errors[] = 'Rejection reason is required for rejected decisions.';
+    }
+
+    if ($decision === 'postponed' && $decisionNotes === '') {
+        $warnings[] = 'Decision notes are recommended for postponed decisions.';
+    }
+
+    if ($decision === 'returned_for_revision' && $decisionNotes === '' && $conditions === '') {
+        $warnings[] = 'Decision notes or conditions are recommended for returned-for-revision decisions.';
+    }
+
+    if ($amountValue !== null && isset($application['requested_amount']) && $amountValue > (float) $application['requested_amount']) {
+        $warnings[] = 'Approved amount exceeds requested amount. Manual review is required.';
+    }
+
+    return ['errors' => $errors, 'warnings' => $warnings];
+}
+
+function get_committee_voting_summary($votes): array
+{
+    $summary = [
+        'total' => 0,
+        'for' => 0,
+        'against' => 0,
+        'abstain' => 0,
+        'conditional' => 0,
+        'majority_supportive' => false,
+    ];
+
+    foreach ((array) $votes as $voteRow) {
+        $vote = is_array($voteRow) ? ($voteRow['vote'] ?? '') : (string) $voteRow;
+        if (array_key_exists($vote, committee_vote_options())) {
+            $summary[$vote]++;
+            $summary['total']++;
+        }
+    }
+
+    $summary['majority_supportive'] = ($summary['for'] + $summary['conditional']) > $summary['against'];
+
+    return $summary;
+}
+
+function committee_decision_differs_from_memo($committeeDecision, $memoRecommendedDecision): bool
+{
+    if ($committeeDecision === null || $committeeDecision === '' || $memoRecommendedDecision === null || $memoRecommendedDecision === '') {
+        return false;
+    }
+
+    $normalize = static function (string $decision): string {
+        return match ($decision) {
+            'approve' => 'approved',
+            'approve_with_conditions' => 'approved_with_conditions',
+            'reject' => 'rejected',
+            'request_additional_information' => 'returned_for_revision',
+            default => $decision,
+        };
+    };
+
+    return $normalize((string) $committeeDecision) !== $normalize((string) $memoRecommendedDecision);
+}
+
+function get_committee_decision_context($pdo, $applicationId): array
+{
+    $context = get_application_full_context($pdo, $applicationId);
+    $applicationId = (int) $applicationId;
+
+    $statement = $pdo->prepare('SELECT * FROM credit_memos WHERE application_id = ? LIMIT 1');
+    $statement->execute([$applicationId]);
+    $creditMemo = $statement->fetch() ?: null;
+
+    $committeeDecision = null;
+    $committeeVotes = [];
+    $statement = $pdo->prepare('SELECT * FROM committee_decisions WHERE application_id = ? LIMIT 1');
+    $statement->execute([$applicationId]);
+    $committeeDecision = $statement->fetch() ?: null;
+    if ($committeeDecision) {
+        $statement = $pdo->prepare('SELECT * FROM committee_votes WHERE committee_decision_id = ? ORDER BY created_at DESC, id DESC');
+        $statement->execute([$committeeDecision['id']]);
+        $committeeVotes = $statement->fetchAll();
+    }
+
+    return $context + [
+        'credit_memo' => $creditMemo,
+        'committee_decision' => $committeeDecision,
+        'committee_votes' => $committeeVotes,
+        'voting_summary' => get_committee_voting_summary($committeeVotes),
+    ];
+}

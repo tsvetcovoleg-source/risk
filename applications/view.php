@@ -15,6 +15,8 @@ $collateralItems = [];
 $collateralSummary = null;
 $scoringResult = null;
 $creditMemo = null;
+$committeeDecision = null;
+$committeeVotesCount = 0;
 
 if ($id && $pdo instanceof PDO) {
     $statement = $pdo->prepare('SELECT ca.*, c.client_name, c.idno, c.legal_form, c.activity_sector, c.status AS client_status FROM credit_applications ca INNER JOIN clients c ON c.id = ca.client_id WHERE ca.id = ? AND ca.deleted_at IS NULL');
@@ -57,6 +59,11 @@ if ($id && $pdo instanceof PDO) {
         $statement = $pdo->prepare('SELECT * FROM credit_memos WHERE application_id = ? LIMIT 1');
         $statement->execute([$id]);
         $creditMemo = $statement->fetch() ?: null;
+
+        $statement = $pdo->prepare('SELECT cd.*, COUNT(cv.id) AS votes_count FROM committee_decisions cd LEFT JOIN committee_votes cv ON cv.committee_decision_id = cd.id WHERE cd.application_id = ? GROUP BY cd.id LIMIT 1');
+        $statement->execute([$id]);
+        $committeeDecision = $statement->fetch() ?: null;
+        $committeeVotesCount = $committeeDecision ? (int) $committeeDecision['votes_count'] : 0;
     }
 }
 
@@ -287,6 +294,27 @@ if (!$application) {
             </div>
         </div>
     </div>
-    <div class="col-md-4"><div class="card module-placeholder border-0 shadow-sm h-100"><div class="card-body"><h3 class="h6 mb-2">Committee decision</h3><p class="text-secondary mb-0">This module will be implemented in the next development stages.</p></div></div></div>
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <h3 class="h6 mb-2">Committee decision</h3>
+                <p class="text-secondary small mb-3">Final committee decision and voting record for this application.</p>
+                <?php if ($committeeDecision): ?>
+                    <div class="mb-3"><span class="text-secondary small">Committee date</span><div class="fw-semibold"><?= e(format_date($committeeDecision['committee_date'])) ?></div></div>
+                    <div class="mb-3"><span class="text-secondary small">Decision</span><br><span class="badge text-bg-<?= e(committee_decision_badge_class($committeeDecision['decision'])) ?>"><?= e(format_decision_label($committeeDecision['decision'])) ?></span></div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6"><div class="border rounded p-2 h-100"><div class="text-secondary small">Approved amount</div><div class="fw-semibold"><?= e(format_amount($committeeDecision['approved_amount'], $committeeDecision['approved_currency'] ?: '')) ?></div></div></div>
+                        <div class="col-6"><div class="border rounded p-2 h-100"><div class="text-secondary small">Approved term</div><div class="fw-semibold"><?= e($committeeDecision['approved_term_months'] ? $committeeDecision['approved_term_months'] . ' months' : '-') ?></div></div></div>
+                        <div class="col-6"><div class="border rounded p-2 h-100"><div class="text-secondary small">Approved currency</div><div class="fw-semibold"><?= e($committeeDecision['approved_currency'] ?: '-') ?></div></div></div>
+                        <div class="col-6"><div class="border rounded p-2 h-100"><div class="text-secondary small">Votes</div><div class="fw-semibold"><?= e($committeeVotesCount) ?></div></div></div>
+                    </div>
+                    <div class="d-flex gap-2 flex-wrap"><a class="btn btn-sm btn-outline-primary" href="<?= e(url('committee/view.php?application_id=' . $application['id'])) ?>">Open decision</a><a class="btn btn-sm btn-outline-secondary" href="<?= e(url('committee/edit.php?application_id=' . $application['id'])) ?>">Edit decision</a></div>
+                <?php else: ?>
+                    <div class="alert alert-warning mb-3">Committee decision has not been recorded yet.</div>
+                    <a class="btn btn-primary" href="<?= e(url('committee/create.php?application_id=' . $application['id'])) ?>">Record committee decision</a>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
 </div>
 <?php require_once dirname(__DIR__) . '/footer.php'; ?>

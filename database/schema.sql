@@ -314,6 +314,7 @@ CREATE TABLE IF NOT EXISTS committee_decisions (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     KEY idx_committee_decisions_application_id (application_id),
     KEY idx_committee_decisions_committee_date (committee_date),
+    UNIQUE KEY uq_committee_decisions_application_id (application_id),
     CONSTRAINT fk_committee_decisions_application
         FOREIGN KEY (application_id) REFERENCES credit_applications (id)
         ON UPDATE CASCADE
@@ -351,7 +352,7 @@ CREATE TABLE IF NOT EXISTS application_comments (
 CREATE TABLE IF NOT EXISTS audit_logs (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     action VARCHAR(50) NOT NULL,
-    entity_type ENUM('client', 'application', 'comment', 'related_party', 'financials', 'financial_period', 'balance_sheet', 'income_statement', 'financial_ratios', 'collateral', 'scoring', 'memo', 'credit_memo', 'committee_decision', 'system') NOT NULL,
+    entity_type ENUM('client', 'application', 'comment', 'related_party', 'financials', 'financial_period', 'balance_sheet', 'income_statement', 'financial_ratios', 'collateral', 'scoring', 'memo', 'credit_memo', 'committee_decision', 'committee_vote', 'system') NOT NULL,
     entity_id INT UNSIGNED NULL,
     old_value JSON NULL,
     new_value JSON NULL,

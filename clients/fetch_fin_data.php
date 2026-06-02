@@ -149,6 +149,16 @@ function find_python_executable(): ?string
     return null;
 }
 
+function default_financial_fetcher_requirements(): array
+{
+    return [
+        'beautifulsoup4',
+        'lxml',
+        'pandas',
+        'playwright',
+    ];
+}
+
 function ensure_financial_fetcher_runtime(): array
 {
     $debug = [];
@@ -157,6 +167,7 @@ function ensure_financial_fetcher_runtime(): array
     $venvDir = $runtimeDir . '/venv';
     $browserDir = $runtimeDir . '/ms-playwright';
     $requirements = $rootDir . '/scripts/requirements-financials.txt';
+    $defaultRequirements = default_financial_fetcher_requirements();
     $installMarker = $runtimeDir . '/requirements.installed';
     $browserMarker = $runtimeDir . '/chromium.installed';
 
@@ -168,6 +179,7 @@ function ensure_financial_fetcher_runtime(): array
         'runtime_dir' => $runtimeDir,
         'requirements' => $requirements,
         'requirements_exists' => is_file($requirements),
+        'default_requirements' => $defaultRequirements,
     ];
 
     if (!is_dir($runtimeDir) && !mkdir($runtimeDir, 0775, true) && !is_dir($runtimeDir)) {
@@ -256,11 +268,10 @@ function ensure_financial_fetcher_runtime(): array
     ];
 
     if (!$dependenciesAvailable && !is_file($requirements)) {
-        return [
-            'ok' => false,
-            'message' => 'Missing financial fetcher requirements file. Upload scripts/requirements-financials.txt together with scripts/fetch_financials_by_idno.py.',
-            'output' => 'Requirements file not found: ' . $requirements,
-            'debug' => $debug,
+        $debug[] = [
+            'step' => 'requirements_file_missing_fallback_to_defaults',
+            'requirements' => $requirements,
+            'default_requirements' => $defaultRequirements,
         ];
     }
 
@@ -277,6 +288,7 @@ function ensure_financial_fetcher_runtime(): array
         'requirements_fresh' => $requirementsAreFresh,
         'dependencies_available' => $dependenciesAvailable,
         'install_mode' => $usingVenv ? 'venv' : 'system_user',
+        'requirements_source' => is_file($requirements) ? 'file' : 'built_in_defaults',
     ];
 
     if (!$requirementsAreFresh) {
@@ -284,7 +296,12 @@ function ensure_financial_fetcher_runtime(): array
         if (!$usingVenv) {
             $pipCommand .= '--user ';
         }
-        $pipCommand .= '-r ' . escapeshellarg($requirements);
+
+        if (is_file($requirements)) {
+            $pipCommand .= '-r ' . escapeshellarg($requirements);
+        } else {
+            $pipCommand .= implode(' ', array_map('escapeshellarg', $defaultRequirements));
+        }
 
         $pipResult = run_shell_command($pipCommand);
         $debug[] = [

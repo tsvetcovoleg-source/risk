@@ -143,3 +143,77 @@ function log_action(PDO $pdo, string $action, string $entityType, int $entityId,
         // Audit logging is useful but should not block core MVP operations.
     }
 }
+
+function validate_date(?string $date): bool
+{
+    return is_valid_date($date);
+}
+
+function format_percent(float|int|string|null $value): string
+{
+    if ($value === null || $value === '') {
+        return '-';
+    }
+
+    return number_format((float) $value, 2, '.', ' ') . '%';
+}
+
+function parse_decimal(mixed $value): ?string
+{
+    if ($value === null) {
+        return null;
+    }
+
+    $normalized = str_replace([' ', ','], ['', '.'], trim((string) $value));
+    if ($normalized === '' || !is_numeric($normalized)) {
+        return null;
+    }
+
+    return number_format((float) $normalized, 2, '.', '');
+}
+
+function balance_difference(float|int|string|null $totalAssets, float|int|string|null $totalLiabilitiesAndEquity): float
+{
+    return round((float) $totalAssets - (float) $totalLiabilitiesAndEquity, 2);
+}
+
+function check_income_statement_consistency(array $income): array
+{
+    $checks = [
+        'gross_profit' => [
+            'label' => 'gross_profit = revenue - cost_of_goods_sold',
+            'expected' => (float) ($income['revenue'] ?? 0) - (float) ($income['cost_of_goods_sold'] ?? 0),
+            'actual' => (float) ($income['gross_profit'] ?? 0),
+        ],
+        'ebitda' => [
+            'label' => 'EBITDA = gross_profit - operating_expenses',
+            'expected' => (float) ($income['gross_profit'] ?? 0) - (float) ($income['operating_expenses'] ?? 0),
+            'actual' => (float) ($income['ebitda'] ?? 0),
+        ],
+        'ebit' => [
+            'label' => 'EBIT = EBITDA - depreciation_amortization',
+            'expected' => (float) ($income['ebitda'] ?? 0) - (float) ($income['depreciation_amortization'] ?? 0),
+            'actual' => (float) ($income['ebit'] ?? 0),
+        ],
+        'profit_before_tax' => [
+            'label' => 'profit_before_tax = EBIT - interest_expense',
+            'expected' => (float) ($income['ebit'] ?? 0) - (float) ($income['interest_expense'] ?? 0),
+            'actual' => (float) ($income['profit_before_tax'] ?? 0),
+        ],
+        'net_profit' => [
+            'label' => 'net_profit = profit_before_tax - tax_expense',
+            'expected' => (float) ($income['profit_before_tax'] ?? 0) - (float) ($income['tax_expense'] ?? 0),
+            'actual' => (float) ($income['net_profit'] ?? 0),
+        ],
+    ];
+
+    $issues = [];
+    foreach ($checks as $field => $check) {
+        $difference = round($check['actual'] - $check['expected'], 2);
+        if (abs($difference) > 0.01) {
+            $issues[$field] = $check + ['difference' => $difference];
+        }
+    }
+
+    return $issues;
+}

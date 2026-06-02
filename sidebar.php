@@ -3,7 +3,7 @@ $menuItems = [
     'dashboard' => ['label' => 'Dashboard', 'path' => 'index.php'],
     'clients' => ['label' => 'Clients', 'path' => 'clients/index.php'],
     'applications' => ['label' => 'Applications', 'path' => 'applications/index.php'],
-    'financials' => ['label' => 'Financials', 'path' => 'financials/index.php'],
+    'financials' => ['label' => 'Financial statements', 'path' => 'financials/index.php'],
     'collateral' => ['label' => 'Collateral', 'path' => 'collateral/index.php'],
     'scoring' => ['label' => 'Scoring', 'path' => 'scoring/index.php'],
     'committee' => ['label' => 'Committee', 'path' => 'committee/index.php'],

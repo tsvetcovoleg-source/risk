@@ -14,6 +14,10 @@ $metricValues = [
     'applications_sent_to_committee' => 0,
     'approved_applications' => 0,
     'rejected_applications' => 0,
+    'total_financial_periods' => 0,
+    'applications_with_financial_statements' => 0,
+    'audited_financial_periods' => 0,
+    'management_account_periods' => 0,
 ];
 
 if ($pdo instanceof PDO) {
@@ -25,6 +29,10 @@ if ($pdo instanceof PDO) {
         'applications_sent_to_committee' => "SELECT COUNT(*) FROM credit_applications WHERE deleted_at IS NULL AND status = 'committee_review'",
         'approved_applications' => "SELECT COUNT(*) FROM credit_applications WHERE deleted_at IS NULL AND status IN ('approved', 'approved_with_conditions', 'disbursed')",
         'rejected_applications' => "SELECT COUNT(*) FROM credit_applications WHERE deleted_at IS NULL AND status = 'rejected'",
+        'total_financial_periods' => "SELECT COUNT(*) FROM financial_periods WHERE deleted_at IS NULL",
+        'applications_with_financial_statements' => "SELECT COUNT(DISTINCT application_id) FROM financial_periods WHERE deleted_at IS NULL",
+        'audited_financial_periods' => "SELECT COUNT(*) FROM financial_periods WHERE deleted_at IS NULL AND is_audited = 1",
+        'management_account_periods' => "SELECT COUNT(*) FROM financial_periods WHERE deleted_at IS NULL AND period_type = 'management'",
     ];
 
     foreach ($queries as $key => $query) {
@@ -42,10 +50,14 @@ $metrics = [
     ['label' => 'Applications sent to committee', 'value' => $metricValues['applications_sent_to_committee'], 'tone' => 'warning'],
     ['label' => 'Approved applications', 'value' => $metricValues['approved_applications'], 'tone' => 'success'],
     ['label' => 'Rejected applications', 'value' => $metricValues['rejected_applications'], 'tone' => 'danger'],
+    ['label' => 'Total financial periods', 'value' => $metricValues['total_financial_periods'], 'tone' => 'primary'],
+    ['label' => 'Applications with financial statements', 'value' => $metricValues['applications_with_financial_statements'], 'tone' => 'info'],
+    ['label' => 'Audited financial periods', 'value' => $metricValues['audited_financial_periods'], 'tone' => 'success'],
+    ['label' => 'Management account periods', 'value' => $metricValues['management_account_periods'], 'tone' => 'warning'],
 ];
 
 $nextSteps = [
-    'Financial statements and ratio analysis',
+    'Financial statement quality checks and financial ratio analysis',
     'Collateral records and valuation support',
     'SME scoring model and credit opinion templates',
     'Credit committee workflow, audit logs, dashboards, and reports',

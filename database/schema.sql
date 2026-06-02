@@ -330,7 +330,7 @@ CREATE TABLE IF NOT EXISTS application_comments (
 CREATE TABLE IF NOT EXISTS audit_logs (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     action VARCHAR(50) NOT NULL,
-    entity_type ENUM('client', 'application', 'comment', 'related_party', 'financials', 'collateral', 'scoring', 'memo', 'committee_decision', 'system') NOT NULL,
+    entity_type ENUM('client', 'application', 'comment', 'related_party', 'financials', 'financial_period', 'balance_sheet', 'income_statement', 'collateral', 'scoring', 'memo', 'committee_decision', 'system') NOT NULL,
     entity_id INT UNSIGNED NULL,
     old_value JSON NULL,
     new_value JSON NULL,

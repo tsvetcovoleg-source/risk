@@ -14,6 +14,7 @@ $ratioRows = [];
 $collateralItems = [];
 $collateralSummary = null;
 $scoringResult = null;
+$creditMemo = null;
 
 if ($id && $pdo instanceof PDO) {
     $statement = $pdo->prepare('SELECT ca.*, c.client_name, c.idno, c.legal_form, c.activity_sector, c.status AS client_status FROM credit_applications ca INNER JOIN clients c ON c.id = ca.client_id WHERE ca.id = ? AND ca.deleted_at IS NULL');
@@ -52,6 +53,10 @@ if ($id && $pdo instanceof PDO) {
         $statement = $pdo->prepare('SELECT * FROM scoring_results WHERE application_id = ? ORDER BY id DESC LIMIT 1');
         $statement->execute([$id]);
         $scoringResult = $statement->fetch() ?: null;
+
+        $statement = $pdo->prepare('SELECT * FROM credit_memos WHERE application_id = ? LIMIT 1');
+        $statement->execute([$id]);
+        $creditMemo = $statement->fetch() ?: null;
     }
 }
 
@@ -256,8 +261,32 @@ if (!$application) {
             </div>
         </div>
     </div>
-    <?php foreach (['Credit memo', 'Committee decision'] as $module): ?>
-        <div class="col-md-4"><div class="card module-placeholder border-0 shadow-sm h-100"><div class="card-body"><h3 class="h6 mb-2"><?= e($module) ?></h3><p class="text-secondary mb-0">This module will be implemented in the next development stages.</p></div></div></div>
-    <?php endforeach; ?>
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <h3 class="h6 mb-2">Credit memo</h3>
+                <p class="text-secondary small mb-3">Central analytical memo prepared for this credit application.</p>
+                <?php if ($creditMemo): ?>
+                    <div class="mb-3">
+                        <span class="text-secondary small">Recommended decision</span><br>
+                        <span class="badge text-bg-<?= e(memo_decision_badge_class($creditMemo['recommended_decision'])) ?>"><?= e(memo_decision_label($creditMemo['recommended_decision'])) ?></span>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6"><div class="border rounded p-2 h-100"><div class="text-secondary small">Prepared at</div><div class="fw-semibold"><?= e(format_date($creditMemo['prepared_at'], 'd.m.Y H:i')) ?></div></div></div>
+                        <div class="col-6"><div class="border rounded p-2 h-100"><div class="text-secondary small">Updated at</div><div class="fw-semibold"><?= e(format_date($creditMemo['updated_at'], 'd.m.Y H:i')) ?></div></div></div>
+                    </div>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <a class="btn btn-sm btn-outline-primary" href="<?= e(url('memos/view.php?application_id=' . $application['id'])) ?>">Open memo</a>
+                        <a class="btn btn-sm btn-outline-secondary" href="<?= e(url('memos/edit.php?application_id=' . $application['id'])) ?>">Edit memo</a>
+                        <a class="btn btn-sm btn-outline-secondary" href="<?= e(url('memos/print.php?application_id=' . $application['id'])) ?>">Print memo</a>
+                    </div>
+                <?php else: ?>
+                    <div class="alert alert-warning mb-3">Credit memo has not been created yet.</div>
+                    <a class="btn btn-primary" href="<?= e(url('memos/create.php?application_id=' . $application['id'])) ?>">Create credit memo</a>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4"><div class="card module-placeholder border-0 shadow-sm h-100"><div class="card-body"><h3 class="h6 mb-2">Committee decision</h3><p class="text-secondary mb-0">This module will be implemented in the next development stages.</p></div></div></div>
 </div>
 <?php require_once dirname(__DIR__) . '/footer.php'; ?>

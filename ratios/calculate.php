@@ -32,10 +32,12 @@ try {
     $statement = $pdo->prepare('SELECT * FROM financial_balance_sheet WHERE financial_period_id = ?');
     $statement->execute([$financialPeriodId]);
     $balance = $statement->fetch() ?: [];
+    $balance = $balance ? persist_balance_sheet_totals($pdo, $balance) : [];
 
     $statement = $pdo->prepare('SELECT * FROM financial_income_statement WHERE financial_period_id = ?');
     $statement->execute([$financialPeriodId]);
     $income = $statement->fetch() ?: [];
+    $income = $income ? persist_income_statement_totals($pdo, $income) : [];
 
     $statement = $pdo->prepare(
         'SELECT i.*
@@ -47,6 +49,7 @@ try {
     );
     $statement->execute([$period['application_id'], $period['period_end_date']]);
     $previousIncome = $statement->fetch() ?: null;
+    $previousIncome = $previousIncome ? calculate_income_statement_totals($previousIncome) : null;
 
     $ratios = calculate_financial_ratios($balance, $income, $previousIncome);
     $columns = array_keys(ratio_columns());

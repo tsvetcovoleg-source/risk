@@ -46,9 +46,11 @@ try {
     foreach ($periods as $period) {
         $balanceStatement->execute([$period['id']]);
         $balance = $balanceStatement->fetch() ?: [];
+        $balance = $balance ? persist_balance_sheet_totals($pdo, $balance) : [];
 
         $incomeStatement->execute([$period['id']]);
         $income = $incomeStatement->fetch() ?: [];
+        $income = $income ? persist_income_statement_totals($pdo, $income) : [];
 
         $existingStatement->execute([$period['id']]);
         $oldRatio = $existingStatement->fetch() ?: null;

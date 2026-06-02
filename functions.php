@@ -217,3 +217,204 @@ function check_income_statement_consistency(array $income): array
 
     return $issues;
 }
+
+function safe_divide(mixed $numerator, mixed $denominator): ?float
+{
+    if ($denominator === null || $denominator === '' || (float) $denominator == 0.0) {
+        return null;
+    }
+
+    return (float) ($numerator ?? 0) / (float) $denominator;
+}
+
+function calculate_financial_ratios(array $balance, array $income, ?array $previousIncome = null): array
+{
+    $totalDebt = (float) ($balance['short_term_debt'] ?? 0) + (float) ($balance['long_term_debt'] ?? 0);
+    $quickAssets = (float) ($balance['cash_and_equivalents'] ?? 0) + (float) ($balance['accounts_receivable'] ?? 0);
+
+    $ratios = [
+        'current_ratio' => safe_divide($balance['total_current_assets'] ?? null, $balance['total_current_liabilities'] ?? null),
+        'quick_ratio' => safe_divide($quickAssets, $balance['total_current_liabilities'] ?? null),
+        'debt_to_equity' => safe_divide($totalDebt, $balance['equity'] ?? null),
+        'debt_to_assets' => safe_divide($totalDebt, $balance['total_assets'] ?? null),
+        'equity_ratio' => safe_divide($balance['equity'] ?? null, $balance['total_assets'] ?? null),
+        'ebitda_margin' => ($margin = safe_divide($income['ebitda'] ?? null, $income['revenue'] ?? null)) === null ? null : $margin * 100,
+        'net_profit_margin' => ($margin = safe_divide($income['net_profit'] ?? null, $income['revenue'] ?? null)) === null ? null : $margin * 100,
+        'interest_coverage_ratio' => safe_divide($income['ebit'] ?? null, $income['interest_expense'] ?? null),
+        // Simplified MVP DSCR: principal repayment schedule is not implemented yet.
+        // Future formula: cash flow available for debt service / scheduled debt service.
+        'debt_service_coverage_ratio' => safe_divide($income['ebitda'] ?? null, $income['interest_expense'] ?? null),
+        'revenue_growth_percent' => null,
+        'net_profit_growth_percent' => null,
+    ];
+
+    if ($previousIncome !== null) {
+        $revenueGrowth = safe_divide(
+            (float) ($income['revenue'] ?? 0) - (float) ($previousIncome['revenue'] ?? 0),
+            $previousIncome['revenue'] ?? null
+        );
+        $ratios['revenue_growth_percent'] = $revenueGrowth === null ? null : $revenueGrowth * 100;
+
+        $previousNetProfit = (float) ($previousIncome['net_profit'] ?? 0);
+        $netProfitGrowth = safe_divide(
+            (float) ($income['net_profit'] ?? 0) - $previousNetProfit,
+            abs($previousNetProfit)
+        );
+        $ratios['net_profit_growth_percent'] = $netProfitGrowth === null ? null : $netProfitGrowth * 100;
+    }
+
+    return $ratios;
+}
+
+function interpret_ratio(string $ratioName, mixed $value, array $context = []): string
+{
+    $equity = isset($context['equity']) ? (float) $context['equity'] : null;
+
+    if (in_array($ratioName, ['debt_to_equity'], true) && $equity !== null && $equity <= 0.0) {
+        return 'negative or zero equity, manual review required';
+    }
+
+    if (in_array($ratioName, ['equity_ratio'], true) && $equity !== null && $equity < 0.0) {
+        return 'negative equity, manual review required';
+    }
+
+    if ($value === null || $value === '') {
+        return 'Not calculated';
+    }
+
+    $value = (float) $value;
+
+    return match ($ratioName) {
+        'current_ratio' => $value < 1.0 ? 'weak liquidity' : ($value <= 1.5 ? 'acceptable liquidity' : 'comfortable liquidity'),
+        'quick_ratio' => $value < 0.7 ? 'weak quick liquidity' : ($value <= 1.0 ? 'acceptable quick liquidity' : 'comfortable quick liquidity'),
+        'debt_to_equity' => $value < 1.0 ? 'low leverage' : ($value <= 2.0 ? 'moderate leverage' : 'high leverage'),
+        'debt_to_assets' => $value < 0.3 ? 'low debt burden' : ($value <= 0.6 ? 'moderate debt burden' : 'high debt burden'),
+        'equity_ratio' => $value < 0.2 ? 'weak capitalization' : ($value <= 0.4 ? 'acceptable capitalization' : 'strong capitalization'),
+        'ebitda_margin' => $value < 5.0 ? 'weak operating profitability' : ($value <= 15.0 ? 'moderate operating profitability' : 'strong operating profitability'),
+        'net_profit_margin' => $value < 2.0 ? 'weak net profitability' : ($value <= 10.0 ? 'moderate net profitability' : 'strong net profitability'),
+        'interest_coverage_ratio' => $value < 1.5 ? 'weak interest coverage' : ($value <= 3.0 ? 'acceptable interest coverage' : 'comfortable interest coverage'),
+        'debt_service_coverage_ratio' => $value < 1.0 ? 'weak coverage' : ($value <= 1.3 ? 'acceptable coverage' : 'comfortable coverage'),
+        'revenue_growth_percent' => $value < 0.0 ? 'revenue declined versus previous period' : ($value == 0.0 ? 'revenue unchanged versus previous period' : 'revenue increased versus previous period'),
+        'net_profit_growth_percent' => $value < 0.0 ? 'net profit declined versus previous period' : ($value == 0.0 ? 'net profit unchanged versus previous period' : 'net profit increased versus previous period'),
+        default => 'No interpretation rule',
+    };
+}
+
+function format_ratio(mixed $value, bool $isPercent = false): string
+{
+    if ($value === null || $value === '') {
+        return 'N/A';
+    }
+
+    return number_format((float) $value, $isPercent ? 1 : 2, '.', ' ') . ($isPercent ? '%' : '');
+}
+
+function get_ratio_warnings(?array $balance, ?array $income, ?array $previousIncome = null): array
+{
+    $warnings = [];
+    $balance = $balance ?? [];
+    $income = $income ?? [];
+
+    if (!$balance) {
+        $warnings[] = 'Balance sheet data is missing; balance-based ratios may be unavailable.';
+    }
+
+    if (!$income) {
+        $warnings[] = 'Income statement data is missing; profitability and coverage ratios may be unavailable.';
+    }
+
+    if ($balance && (float) ($balance['equity'] ?? 0) < 0.0) {
+        $warnings[] = 'Negative equity detected; leverage and capitalization require manual review.';
+    }
+
+    if ($income && (float) ($income['revenue'] ?? 0) == 0.0) {
+        $warnings[] = 'Revenue is zero; margin ratios and revenue growth may be unavailable.';
+    }
+
+    if ($income && (float) ($income['interest_expense'] ?? 0) == 0.0) {
+        $warnings[] = 'Interest expense is zero; interest coverage and simplified DSCR are not calculated.';
+    }
+
+    if ($income && (float) ($income['ebit'] ?? 0) <= 0.0) {
+        $warnings[] = 'EBIT is zero or negative; interest coverage appears weak and needs analyst review.';
+    }
+
+    if ($balance && abs(balance_difference($balance['total_assets'] ?? 0, $balance['total_liabilities_and_equity'] ?? 0)) > 0.01) {
+        $warnings[] = 'Balance sheet does not balance; verify total assets and total liabilities plus equity.';
+    }
+
+    if ($income) {
+        foreach (check_income_statement_consistency($income) as $issue) {
+            $warnings[] = 'P&L control discrepancy: ' . $issue['label'] . ' (difference ' . format_amount($issue['difference'], '') . ').';
+        }
+    }
+
+    if ($previousIncome === null) {
+        $warnings[] = 'No previous period income statement found; growth ratios are not calculated.';
+    } else {
+        if ((float) ($previousIncome['revenue'] ?? 0) == 0.0) {
+            $warnings[] = 'Previous period revenue is zero; revenue growth is not calculated.';
+        }
+        if ((float) ($previousIncome['net_profit'] ?? 0) == 0.0) {
+            $warnings[] = 'Previous period net profit is zero; net profit growth is not calculated.';
+        } elseif ((float) ($previousIncome['net_profit'] ?? 0) < 0.0) {
+            $warnings[] = 'Previous period was loss-making; net profit growth requires careful manual interpretation.';
+        }
+    }
+
+    return $warnings;
+}
+
+function ratio_definitions(): array
+{
+    return [
+        'liquidity' => [
+            'label' => 'Liquidity',
+            'ratios' => [
+                'current_ratio' => ['label' => 'Current ratio', 'formula' => 'total_current_assets / total_current_liabilities', 'percent' => false],
+                'quick_ratio' => ['label' => 'Quick ratio', 'formula' => '(cash_and_equivalents + accounts_receivable) / total_current_liabilities', 'percent' => false],
+            ],
+        ],
+        'leverage' => [
+            'label' => 'Leverage',
+            'ratios' => [
+                'debt_to_equity' => ['label' => 'Debt to equity', 'formula' => '(short_term_debt + long_term_debt) / equity', 'percent' => false],
+                'debt_to_assets' => ['label' => 'Debt to assets', 'formula' => '(short_term_debt + long_term_debt) / total_assets', 'percent' => false],
+                'equity_ratio' => ['label' => 'Equity ratio', 'formula' => 'equity / total_assets', 'percent' => false],
+            ],
+        ],
+        'profitability' => [
+            'label' => 'Profitability',
+            'ratios' => [
+                'ebitda_margin' => ['label' => 'EBITDA margin', 'formula' => 'ebitda / revenue * 100', 'percent' => true],
+                'net_profit_margin' => ['label' => 'Net profit margin', 'formula' => 'net_profit / revenue * 100', 'percent' => true],
+            ],
+        ],
+        'coverage' => [
+            'label' => 'Coverage',
+            'ratios' => [
+                'interest_coverage_ratio' => ['label' => 'Interest coverage ratio', 'formula' => 'ebit / interest_expense', 'percent' => false],
+                'debt_service_coverage_ratio' => ['label' => 'Simplified DSCR', 'formula' => 'ebitda / interest_expense', 'percent' => false, 'comment' => 'Simplified MVP DSCR. Principal repayment schedule is not implemented yet; future formula should use cash flow available for debt service / scheduled debt service.'],
+            ],
+        ],
+        'growth' => [
+            'label' => 'Growth',
+            'ratios' => [
+                'revenue_growth_percent' => ['label' => 'Revenue growth percent', 'formula' => '(current_period_revenue - previous_period_revenue) / previous_period_revenue * 100', 'percent' => true],
+                'net_profit_growth_percent' => ['label' => 'Net profit growth percent', 'formula' => '(current_period_net_profit - previous_period_net_profit) / ABS(previous_period_net_profit) * 100', 'percent' => true],
+            ],
+        ],
+    ];
+}
+
+function ratio_columns(): array
+{
+    $columns = [];
+    foreach (ratio_definitions() as $group) {
+        foreach ($group['ratios'] as $key => $definition) {
+            $columns[$key] = $definition;
+        }
+    }
+
+    return $columns;
+}

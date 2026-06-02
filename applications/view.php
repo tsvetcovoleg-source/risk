@@ -13,6 +13,7 @@ $financialPeriods = [];
 $ratioRows = [];
 $collateralItems = [];
 $collateralSummary = null;
+$scoringResult = null;
 
 if ($id && $pdo instanceof PDO) {
     $statement = $pdo->prepare('SELECT ca.*, c.client_name, c.idno, c.legal_form, c.activity_sector, c.status AS client_status FROM credit_applications ca INNER JOIN clients c ON c.id = ca.client_id WHERE ca.id = ? AND ca.deleted_at IS NULL');
@@ -47,6 +48,10 @@ if ($id && $pdo instanceof PDO) {
         $statement->execute([$id]);
         $collateralItems = $statement->fetchAll();
         $collateralSummary = calculate_collateral_summary($collateralItems, $application['requested_amount'], $application['currency']);
+
+        $statement = $pdo->prepare('SELECT * FROM scoring_results WHERE application_id = ? ORDER BY id DESC LIMIT 1');
+        $statement->execute([$id]);
+        $scoringResult = $statement->fetch() ?: null;
     }
 }
 
@@ -224,5 +229,35 @@ if (!$application) {
 
 <div class="card border-0 shadow-sm mb-4"><div class="card-body p-4"><h2 class="h5 mb-3">Application comments</h2><form method="post" action="<?= e(url('applications/comment_store.php')) ?>" class="mb-4"><input type="hidden" name="application_id" value="<?= e($application['id']) ?>"><label class="form-label" for="comment_text">Comment text</label><textarea class="form-control mb-2" id="comment_text" name="comment_text" rows="3" required></textarea><button class="btn btn-primary" type="submit">Add comment</button></form><div class="table-responsive"><table class="table table-hover align-middle"><thead class="table-light"><tr><th>Comment text</th><th>Created date</th><th class="text-end">Action</th></tr></thead><tbody><?php if (!$comments): ?><tr><td colspan="3" class="text-center text-secondary py-3">No comments.</td></tr><?php endif; ?><?php foreach ($comments as $comment): ?><tr><td><?= e($comment['comment_text']) ?></td><td><?= e(format_date($comment['created_at'], 'd.m.Y H:i')) ?></td><td class="text-end"><a class="btn btn-sm btn-outline-danger" href="<?= e(url('applications/comment_delete.php?id=' . $comment['id'])) ?>" onclick="return confirm('Delete this comment?');">Delete</a></td></tr><?php endforeach; ?></tbody></table></div></div></div>
 
-<div class="row g-3"><?php foreach (['Scoring', 'Credit memo', 'Committee decision'] as $module): ?><div class="col-md-4"><div class="card module-placeholder border-0 shadow-sm h-100"><div class="card-body"><h3 class="h6 mb-2"><?= e($module) ?></h3><p class="text-secondary mb-0">This module will be implemented in the next development stages.</p></div></div></div><?php endforeach; ?></div>
+<div class="row g-3">
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+                    <div>
+                        <h3 class="h6 mb-1">Scoring</h3>
+                        <p class="text-secondary small mb-0">SME scoring model result for this application.</p>
+                    </div>
+                    <a class="btn btn-sm btn-primary" href="<?= e(url('scoring/calculate.php?application_id=' . $application['id'])) ?>">Calculate scoring</a>
+                </div>
+                <?php if ($scoringResult): ?>
+                    <div class="row g-2 mb-3">
+                        <?php foreach (['Financial score' => $scoringResult['financial_score'], 'Non-financial score' => $scoringResult['non_financial_score'], 'Collateral score' => $scoringResult['collateral_score'], 'Final score' => $scoringResult['final_score']] as $label => $value): ?>
+                            <div class="col-6"><div class="border rounded p-2 h-100"><div class="text-secondary small"><?= e($label) ?></div><div class="fw-semibold"><?= e(format_score($value)) ?></div></div></div>
+                        <?php endforeach; ?>
+                    </div>
+                    <div class="mb-3"><span class="text-secondary small">Risk level</span><br><span class="badge text-bg-<?= e(risk_level_badge_class($scoringResult['risk_level'])) ?>"><?= e($scoringResult['risk_level']) ?></span></div>
+                    <div class="mb-3"><span class="text-secondary small">Expert override</span><div class="fw-semibold"><?= e($scoringResult['expert_override'] ? 'Yes' : 'No') ?></div></div>
+                    <?php if ($scoringResult['expert_override']): ?><div class="alert alert-warning py-2">Risk level was manually overridden.</div><?php endif; ?>
+                    <a class="btn btn-outline-primary" href="<?= e(url('scoring/view.php?application_id=' . $application['id'])) ?>">Open scoring</a>
+                <?php else: ?>
+                    <div class="alert alert-warning mb-3">Scoring has not been calculated yet.</div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+    <?php foreach (['Credit memo', 'Committee decision'] as $module): ?>
+        <div class="col-md-4"><div class="card module-placeholder border-0 shadow-sm h-100"><div class="card-body"><h3 class="h6 mb-2"><?= e($module) ?></h3><p class="text-secondary mb-0">This module will be implemented in the next development stages.</p></div></div></div>
+    <?php endforeach; ?>
+</div>
 <?php require_once dirname(__DIR__) . '/footer.php'; ?>

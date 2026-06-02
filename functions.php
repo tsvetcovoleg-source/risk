@@ -530,3 +530,272 @@ function interpret_ltv(float|int|string|null $ltv): string
 
     return 'conservative LTV';
 }
+
+function score_current_ratio($value): int
+{
+    if ($value === null || $value === '') return 3;
+    $value = (float) $value;
+    if ($value >= 1.5) return 1;
+    if ($value >= 1.0) return 2;
+    if ($value >= 0.8) return 3;
+    if ($value >= 0.5) return 4;
+    return 5;
+}
+
+function score_debt_to_equity($value, $equity = null): int
+{
+    if ($equity !== null && $equity !== '' && (float) $equity <= 0.0) return 5;
+    if ($value === null || $value === '') return 3;
+    $value = (float) $value;
+    if ($value < 1.0) return 1;
+    if ($value <= 2.0) return 2;
+    if ($value <= 3.0) return 3;
+    if ($value <= 5.0) return 4;
+    return 5;
+}
+
+function score_debt_to_assets($value): int
+{
+    if ($value === null || $value === '') return 3;
+    $value = (float) $value;
+    if ($value < 0.3) return 1;
+    if ($value <= 0.5) return 2;
+    if ($value <= 0.7) return 3;
+    if ($value <= 0.9) return 4;
+    return 5;
+}
+
+function score_equity_ratio($value): int
+{
+    if ($value === null || $value === '') return 3;
+    $value = (float) $value;
+    if ($value >= 0.4) return 1;
+    if ($value >= 0.25) return 2;
+    if ($value >= 0.15) return 3;
+    if ($value > 0.0) return 4;
+    return 5;
+}
+
+function score_ebitda_margin($value): int
+{
+    if ($value === null || $value === '') return 3;
+    $value = (float) $value;
+    if ($value >= 20.0) return 1;
+    if ($value >= 10.0) return 2;
+    if ($value >= 5.0) return 3;
+    if ($value >= 0.0) return 4;
+    return 5;
+}
+
+function score_net_profit_margin($value): int
+{
+    if ($value === null || $value === '') return 3;
+    $value = (float) $value;
+    if ($value >= 10.0) return 1;
+    if ($value >= 5.0) return 2;
+    if ($value >= 2.0) return 3;
+    if ($value >= 0.0) return 4;
+    return 5;
+}
+
+function score_interest_coverage($value): int
+{
+    if ($value === null || $value === '') return 3;
+    $value = (float) $value;
+    if ($value >= 4.0) return 1;
+    if ($value >= 2.5) return 2;
+    if ($value >= 1.5) return 3;
+    if ($value >= 1.0) return 4;
+    return 5;
+}
+
+function score_dscr($value): int
+{
+    if ($value === null || $value === '') return 3;
+    $value = (float) $value;
+    if ($value >= 2.0) return 1;
+    if ($value >= 1.5) return 2;
+    if ($value >= 1.2) return 3;
+    if ($value >= 1.0) return 4;
+    return 5;
+}
+
+function score_growth_percent($value): int
+{
+    if ($value === null || $value === '') return 3;
+    $value = (float) $value;
+    if ($value >= 20.0) return 1;
+    if ($value >= 5.0) return 2;
+    if ($value >= -5.0) return 3;
+    if ($value >= -20.0) return 4;
+    return 5;
+}
+
+function scoring_financial_factor_definitions(): array
+{
+    return [
+        'current_ratio' => ['label' => 'Current ratio', 'percent' => false, 'scorer' => 'score_current_ratio'],
+        'debt_to_equity' => ['label' => 'Debt to equity', 'percent' => false, 'scorer' => 'score_debt_to_equity'],
+        'debt_to_assets' => ['label' => 'Debt to assets', 'percent' => false, 'scorer' => 'score_debt_to_assets'],
+        'equity_ratio' => ['label' => 'Equity ratio', 'percent' => false, 'scorer' => 'score_equity_ratio'],
+        'ebitda_margin' => ['label' => 'EBITDA margin', 'percent' => true, 'scorer' => 'score_ebitda_margin'],
+        'net_profit_margin' => ['label' => 'Net profit margin', 'percent' => true, 'scorer' => 'score_net_profit_margin'],
+        'interest_coverage_ratio' => ['label' => 'Interest coverage ratio', 'percent' => false, 'scorer' => 'score_interest_coverage'],
+        'debt_service_coverage_ratio' => ['label' => 'Simplified DSCR', 'percent' => false, 'scorer' => 'score_dscr'],
+        'revenue_growth_percent' => ['label' => 'Revenue growth percent', 'percent' => true, 'scorer' => 'score_growth_percent'],
+        'net_profit_growth_percent' => ['label' => 'Net profit growth percent', 'percent' => true, 'scorer' => 'score_growth_percent'],
+    ];
+}
+
+function calculate_financial_score($ratios, $balance = null): array
+{
+    $details = [];
+    $warnings = [];
+    $points = [];
+    $equity = is_array($balance) ? ($balance['equity'] ?? null) : null;
+
+    if ($equity !== null && $equity !== '' && (float) $equity <= 0.0) {
+        $warnings[] = 'Negative or zero equity detected; debt to equity receives 5 points and requires manual review.';
+    }
+
+    foreach (scoring_financial_factor_definitions() as $key => $definition) {
+        $value = is_array($ratios) ? ($ratios[$key] ?? null) : null;
+        if ($value === null || $value === '') {
+            $warnings[] = $definition['label'] . ' is missing and receives neutral 3 points.';
+        }
+        $point = $key === 'debt_to_equity'
+            ? score_debt_to_equity($value, $equity)
+            : $definition['scorer']($value);
+        $points[] = $point;
+        $details[$key] = [
+            'label' => $definition['label'],
+            'value' => $value,
+            'percent' => $definition['percent'],
+            'points' => $point,
+            'comment' => interpret_score_point($point),
+        ];
+    }
+
+    return [
+        'score' => round(array_sum($points) / max(count($points), 1), 2),
+        'details' => $details,
+        'warnings' => array_values(array_unique($warnings)),
+    ];
+}
+
+function calculate_collateral_score($collateralSummary): array
+{
+    $summary = is_array($collateralSummary) ? $collateralSummary : [];
+    $warnings = $summary['warnings'] ?? [];
+    $coverageRatio = $summary['collateral_coverage_ratio'] ?? null;
+    $sameCurrencyAccepted = (float) ($summary['total_accepted_application_currency'] ?? 0);
+    $totalsByCurrency = $summary['totals_by_currency'] ?? [];
+    $hasAnyCollateral = count($totalsByCurrency) > 0;
+    $hasDifferentCurrencies = (bool) ($summary['has_different_currencies'] ?? false);
+
+    if (!$hasAnyCollateral) {
+        $score = 5;
+        $warnings[] = 'No collateral is registered for this application.';
+    } elseif ($sameCurrencyAccepted <= 0.0 && $hasDifferentCurrencies) {
+        $score = 4;
+        $warnings[] = 'Collateral exists only in currencies different from the application currency; manual interpretation is required.';
+    } elseif ($coverageRatio === null) {
+        $score = 5;
+        $warnings[] = 'Collateral coverage ratio is not calculated because requested amount is zero or missing.';
+    } else {
+        $coverage = (float) $coverageRatio;
+        if ($coverage >= 150.0) $score = 1;
+        elseif ($coverage >= 100.0) $score = 2;
+        elseif ($coverage >= 70.0) $score = 3;
+        elseif ($coverage >= 30.0) $score = 4;
+        else $score = 5;
+    }
+
+    if ($hasDifferentCurrencies && $sameCurrencyAccepted > 0.0) {
+        $warnings[] = 'Collateral includes different currencies; score uses only accepted value in application currency.';
+    }
+
+    return [
+        'score' => round((float) $score, 2),
+        'coverage_ratio' => $coverageRatio,
+        'ltv' => $summary['ltv'] ?? null,
+        'warnings' => array_values(array_unique($warnings)),
+    ];
+}
+
+function calculate_non_financial_score($factors): float
+{
+    $values = [];
+    foreach ((array) $factors as $value) {
+        if ($value === null || $value === '') continue;
+        $intValue = (int) $value;
+        if ($intValue >= 1 && $intValue <= 5) $values[] = $intValue;
+    }
+
+    if (!$values) return 3.00;
+    return round(array_sum($values) / count($values), 2);
+}
+
+function calculate_final_score($financialScore, $nonFinancialScore, $collateralScore): float
+{
+    return round(((float) $financialScore * 0.50) + ((float) $nonFinancialScore * 0.25) + ((float) $collateralScore * 0.25), 2);
+}
+
+function determine_risk_level($finalScore): string
+{
+    $score = (float) $finalScore;
+    if ($score <= 1.75) return 'low';
+    if ($score <= 2.50) return 'moderate';
+    if ($score <= 3.25) return 'medium';
+    if ($score <= 4.00) return 'high';
+    return 'very_high';
+}
+
+function interpret_score_point($point): string
+{
+    return match ((int) $point) {
+        1 => 'very good',
+        2 => 'good',
+        3 => 'acceptable',
+        4 => 'weak',
+        5 => 'high risk',
+        default => 'not assessed',
+    };
+}
+
+function format_score($value): string
+{
+    if ($value === null || $value === '') return 'N/A';
+    return number_format((float) $value, 2, '.', ' ');
+}
+
+function risk_level_badge_class(?string $riskLevel): string
+{
+    return match ($riskLevel) {
+        'low' => 'success',
+        'moderate' => 'info',
+        'medium' => 'warning',
+        'high' => 'danger',
+        'very_high' => 'dark',
+        default => 'secondary',
+    };
+}
+
+function non_financial_factor_definitions(): array
+{
+    return [
+        'business_reputation' => 'Business reputation',
+        'management_quality' => 'Management quality',
+        'market_position' => 'Market position',
+        'industry_risk' => 'Industry risk',
+        'transparency_quality' => 'Transparency quality',
+        'relationship_history' => 'Relationship history',
+    ];
+}
+
+function normalize_non_financial_factor(mixed $value): ?int
+{
+    if ($value === null || $value === '') return null;
+    $intValue = filter_var($value, FILTER_VALIDATE_INT);
+    return ($intValue !== false && $intValue >= 1 && $intValue <= 5) ? (int) $intValue : null;
+}

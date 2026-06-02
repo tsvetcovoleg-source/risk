@@ -166,6 +166,7 @@ function ensure_financial_fetcher_runtime(): array
         'disabled_functions' => ini_get('disable_functions') ?: '',
         'root_dir' => $rootDir,
         'runtime_dir' => $runtimeDir,
+        'requirements' => $requirements,
         'requirements_exists' => is_file($requirements),
     ];
 
@@ -196,7 +197,10 @@ function ensure_financial_fetcher_runtime(): array
         ];
     }
 
+    $python = $systemPython;
+    $usingVenv = false;
     $venvPython = $venvDir . '/bin/python';
+
     if (!is_file($venvPython)) {
         $venvResult = run_shell_command(escapeshellarg($systemPython) . ' -m venv ' . escapeshellarg($venvDir));
         $debug[] = [
@@ -205,36 +209,84 @@ function ensure_financial_fetcher_runtime(): array
             'command' => $venvResult['command'],
             'output_tail' => substr($venvResult['output'], -1200),
         ];
+
         if ($venvResult['exit_code'] !== 0) {
-            return [
-                'ok' => false,
-                'message' => 'Cannot create Python virtual environment. Install python3-venv or allow venv creation.',
-                'output' => $venvResult['output'],
-                'debug' => $debug,
+            $debug[] = [
+                'step' => 'venv_fallback_to_system_python',
+                'reason' => 'venv creation failed, usually because ensurepip/python3-venv is unavailable on shared hosting',
+                'python' => $systemPython,
             ];
         }
     } else {
         $debug[] = ['step' => 'venv_exists', 'venv_python' => $venvPython];
     }
 
-    $python = is_file($venvPython) ? $venvPython : $systemPython;
-    $requirementsAreFresh = is_file($installMarker)
-        && filemtime($installMarker) !== false
-        && filemtime($requirements) !== false
-        && filemtime($installMarker) >= filemtime($requirements);
+    if (is_file($venvPython)) {
+        $pipCheck = run_shell_command(escapeshellarg($venvPython) . ' -m pip --version');
+        $debug[] = [
+            'step' => 'venv_pip_check',
+            'exit_code' => $pipCheck['exit_code'],
+            'command' => $pipCheck['command'],
+            'output_tail' => substr($pipCheck['output'], -1200),
+        ];
+
+        if ($pipCheck['exit_code'] === 0) {
+            $python = $venvPython;
+            $usingVenv = true;
+        } else {
+            $debug[] = [
+                'step' => 'venv_fallback_to_system_python',
+                'reason' => 'venv exists but pip is not available inside it',
+                'python' => $systemPython,
+            ];
+        }
+    }
+
+    $dependencyCheck = run_shell_command(
+        escapeshellarg($python) . ' -c ' . escapeshellarg('import pandas, bs4; from playwright.async_api import async_playwright')
+    );
+    $dependenciesAvailable = $dependencyCheck['exit_code'] === 0;
+    $debug[] = [
+        'step' => 'dependency_import_check',
+        'python' => $python,
+        'using_venv' => $usingVenv,
+        'exit_code' => $dependencyCheck['exit_code'],
+        'command' => $dependencyCheck['command'],
+        'output_tail' => substr($dependencyCheck['output'], -1600),
+    ];
+
+    if (!$dependenciesAvailable && !is_file($requirements)) {
+        return [
+            'ok' => false,
+            'message' => 'Missing financial fetcher requirements file. Upload scripts/requirements-financials.txt together with scripts/fetch_financials_by_idno.py.',
+            'output' => 'Requirements file not found: ' . $requirements,
+            'debug' => $debug,
+        ];
+    }
+
+    $requirementsAreFresh = $dependenciesAvailable
+        || (is_file($installMarker)
+            && filemtime($installMarker) !== false
+            && is_file($requirements)
+            && filemtime($requirements) !== false
+            && filemtime($installMarker) >= filemtime($requirements));
     $debug[] = [
         'step' => 'requirements_check',
         'python' => $python,
         'requirements' => $requirements,
         'requirements_fresh' => $requirementsAreFresh,
+        'dependencies_available' => $dependenciesAvailable,
+        'install_mode' => $usingVenv ? 'venv' : 'system_user',
     ];
 
     if (!$requirementsAreFresh) {
-        $pipResult = run_shell_command(
-            escapeshellarg($python)
-            . ' -m pip install --disable-pip-version-check --no-input -r '
-            . escapeshellarg($requirements)
-        );
+        $pipCommand = escapeshellarg($python) . ' -m pip install --disable-pip-version-check --no-input ';
+        if (!$usingVenv) {
+            $pipCommand .= '--user ';
+        }
+        $pipCommand .= '-r ' . escapeshellarg($requirements);
+
+        $pipResult = run_shell_command($pipCommand);
         $debug[] = [
             'step' => 'pip_install',
             'exit_code' => $pipResult['exit_code'],
@@ -244,13 +296,33 @@ function ensure_financial_fetcher_runtime(): array
         if ($pipResult['exit_code'] !== 0) {
             return [
                 'ok' => false,
-                'message' => 'Cannot install Python dependencies for financial fetcher.',
+                'message' => $usingVenv
+                    ? 'Cannot install Python dependencies for financial fetcher inside virtualenv.'
+                    : 'Cannot install Python dependencies for financial fetcher with system Python --user. Ask hosting support to enable pip/user installs or install the packages manually.',
                 'output' => $pipResult['output'],
                 'debug' => $debug,
             ];
         }
 
         @touch($installMarker);
+
+        $dependencyCheck = run_shell_command(
+            escapeshellarg($python) . ' -c ' . escapeshellarg('import pandas, bs4; from playwright.async_api import async_playwright')
+        );
+        $debug[] = [
+            'step' => 'dependency_import_check_after_install',
+            'exit_code' => $dependencyCheck['exit_code'],
+            'command' => $dependencyCheck['command'],
+            'output_tail' => substr($dependencyCheck['output'], -1600),
+        ];
+        if ($dependencyCheck['exit_code'] !== 0) {
+            return [
+                'ok' => false,
+                'message' => 'Python dependencies were installed, but imports still fail.',
+                'output' => $dependencyCheck['output'],
+                'debug' => $debug,
+            ];
+        }
     }
 
     if (!is_file($browserMarker)) {
@@ -279,7 +351,13 @@ function ensure_financial_fetcher_runtime(): array
         $debug[] = ['step' => 'chromium_exists', 'browser_dir' => $browserDir];
     }
 
-    $debug[] = ['step' => 'runtime_ok', 'python' => $python, 'browser_dir' => $browserDir];
+    $debug[] = [
+        'step' => 'runtime_ok',
+        'python' => $python,
+        'using_venv' => $usingVenv,
+        'browser_dir' => $browserDir,
+    ];
+
     return [
         'ok' => true,
         'python' => $python,
@@ -339,6 +417,18 @@ function run_financial_fetcher(string $idno): array
     }
 
     $script = dirname(__DIR__) . '/scripts/fetch_financials_by_idno.py';
+    if (!is_file($script)) {
+        return [
+            'exit_code' => 1,
+            'output' => 'Fetcher script not found: ' . $script,
+            'error_message' => 'Missing financial fetcher script. Upload scripts/fetch_financials_by_idno.py to the server.',
+            'debug' => array_merge($runtime['debug'] ?? [], [[
+                'step' => 'fetcher_script_missing',
+                'script' => $script,
+            ]]),
+        ];
+    }
+
     $command = 'PLAYWRIGHT_BROWSERS_PATH=' . escapeshellarg((string) $runtime['browser_dir'])
         . ' ' . escapeshellarg((string) $runtime['python'])
         . ' ' . escapeshellarg($script)

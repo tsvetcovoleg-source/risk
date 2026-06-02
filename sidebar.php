@@ -7,6 +7,7 @@ $menuItems = [
     'ratios' => ['label' => 'Financial ratios', 'path' => 'ratios/index.php'],
     'collateral' => ['label' => 'Collateral', 'path' => 'collateral/index.php'],
     'scoring' => ['label' => 'Scoring', 'path' => 'scoring/index.php'],
+    'memos' => ['label' => 'Credit memos', 'path' => 'memos/index.php'],
     'committee' => ['label' => 'Committee', 'path' => 'committee/index.php'],
     'reports' => ['label' => 'Reports', 'path' => 'reports/index.php'],
     'logs' => ['label' => 'Logs', 'path' => 'logs/index.php'],

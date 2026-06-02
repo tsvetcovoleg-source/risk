@@ -33,6 +33,12 @@ $metricValues = [
     'high_risk_applications' => 0,
     'very_high_risk_applications' => 0,
     'expert_override_cases' => 0,
+    'total_credit_memos' => 0,
+    'applications_without_credit_memo' => 0,
+    'memos_recommended_for_approval' => 0,
+    'memos_recommended_for_approval_with_conditions' => 0,
+    'memos_recommended_for_rejection' => 0,
+    'memos_requiring_additional_information' => 0,
 ];
 
 if ($pdo instanceof PDO) {
@@ -63,6 +69,12 @@ if ($pdo instanceof PDO) {
         'high_risk_applications' => "SELECT COUNT(*) FROM scoring_results sr INNER JOIN credit_applications ca ON ca.id = sr.application_id WHERE ca.deleted_at IS NULL AND sr.risk_level = 'high'",
         'very_high_risk_applications' => "SELECT COUNT(*) FROM scoring_results sr INNER JOIN credit_applications ca ON ca.id = sr.application_id WHERE ca.deleted_at IS NULL AND sr.risk_level = 'very_high'",
         'expert_override_cases' => "SELECT COUNT(*) FROM scoring_results sr INNER JOIN credit_applications ca ON ca.id = sr.application_id WHERE ca.deleted_at IS NULL AND sr.expert_override = 1",
+        'total_credit_memos' => "SELECT COUNT(*) FROM credit_memos cm INNER JOIN credit_applications ca ON ca.id = cm.application_id WHERE ca.deleted_at IS NULL",
+        'applications_without_credit_memo' => "SELECT COUNT(*) FROM credit_applications ca WHERE ca.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM credit_memos cm WHERE cm.application_id = ca.id)",
+        'memos_recommended_for_approval' => "SELECT COUNT(*) FROM credit_memos cm INNER JOIN credit_applications ca ON ca.id = cm.application_id WHERE ca.deleted_at IS NULL AND cm.recommended_decision = 'approve'",
+        'memos_recommended_for_approval_with_conditions' => "SELECT COUNT(*) FROM credit_memos cm INNER JOIN credit_applications ca ON ca.id = cm.application_id WHERE ca.deleted_at IS NULL AND cm.recommended_decision = 'approve_with_conditions'",
+        'memos_recommended_for_rejection' => "SELECT COUNT(*) FROM credit_memos cm INNER JOIN credit_applications ca ON ca.id = cm.application_id WHERE ca.deleted_at IS NULL AND cm.recommended_decision = 'reject'",
+        'memos_requiring_additional_information' => "SELECT COUNT(*) FROM credit_memos cm INNER JOIN credit_applications ca ON ca.id = cm.application_id WHERE ca.deleted_at IS NULL AND cm.recommended_decision = 'request_additional_information'",
     ];
 
     foreach ($queries as $key => $query) {
@@ -99,12 +111,18 @@ $metrics = [
     ['label' => 'High risk applications', 'value' => $metricValues['high_risk_applications'], 'tone' => 'danger'],
     ['label' => 'Very high risk applications', 'value' => $metricValues['very_high_risk_applications'], 'tone' => 'dark'],
     ['label' => 'Expert override cases', 'value' => $metricValues['expert_override_cases'], 'tone' => 'warning'],
+    ['label' => 'Total credit memos', 'value' => $metricValues['total_credit_memos'], 'tone' => 'primary'],
+    ['label' => 'Applications without credit memo', 'value' => $metricValues['applications_without_credit_memo'], 'tone' => 'warning'],
+    ['label' => 'Memos recommended for approval', 'value' => $metricValues['memos_recommended_for_approval'], 'tone' => 'success'],
+    ['label' => 'Memos recommended for approval with conditions', 'value' => $metricValues['memos_recommended_for_approval_with_conditions'], 'tone' => 'info'],
+    ['label' => 'Memos recommended for rejection', 'value' => $metricValues['memos_recommended_for_rejection'], 'tone' => 'danger'],
+    ['label' => 'Memos requiring additional information', 'value' => $metricValues['memos_requiring_additional_information'], 'tone' => 'secondary'],
 ];
 
 $nextSteps = [
     'Refine financial ratio thresholds and prepare inputs for the future scoring model',
     'Enhance collateral valuation review and manual legal checklist',
-    'Credit opinion templates using calculated SME scoring outputs',
+    'Enhance credit memo conditions, document checklist, and analyst quality review',
     'Credit committee workflow, audit logs, dashboards, and reports',
 ];
 

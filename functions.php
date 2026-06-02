@@ -799,3 +799,549 @@ function normalize_non_financial_factor(mixed $value): ?int
     $intValue = filter_var($value, FILTER_VALIDATE_INT);
     return ($intValue !== false && $intValue >= 1 && $intValue <= 5) ? (int) $intValue : null;
 }
+
+function memo_decision_options(): array
+{
+    return [
+        'approve' => 'Approve',
+        'approve_with_conditions' => 'Approve with conditions',
+        'reject' => 'Reject',
+        'postpone' => 'Postpone',
+        'request_additional_information' => 'Request additional information',
+    ];
+}
+
+function is_valid_memo_decision(?string $decision): bool
+{
+    return $decision !== null && array_key_exists($decision, memo_decision_options());
+}
+
+function memo_decision_label(?string $decision): string
+{
+    if ($decision === null || $decision === '') {
+        return '-';
+    }
+
+    return memo_decision_options()[$decision] ?? $decision;
+}
+
+function memo_decision_badge_class(?string $decision): string
+{
+    return match ($decision) {
+        'approve' => 'success',
+        'approve_with_conditions' => 'info',
+        'reject' => 'danger',
+        'postpone' => 'warning',
+        'request_additional_information' => 'secondary',
+        default => 'light',
+    };
+}
+
+function get_application_full_context(PDO $pdo, $applicationId): array
+{
+    $applicationId = (int) $applicationId;
+
+    $statement = $pdo->prepare(
+        'SELECT ca.*, c.client_name, c.idno, c.legal_form, c.registration_date, c.activity_sector, c.caem_code,
+                c.address, c.status AS client_status, c.notes AS client_notes
+         FROM credit_applications ca
+         INNER JOIN clients c ON c.id = ca.client_id
+         WHERE ca.id = ? AND ca.deleted_at IS NULL AND c.deleted_at IS NULL'
+    );
+    $statement->execute([$applicationId]);
+    $application = $statement->fetch() ?: null;
+
+    if (!$application) {
+        return [
+            'application' => null,
+            'client' => null,
+            'related_parties' => [],
+            'latest_financial_period' => null,
+            'latest_balance_sheet' => null,
+            'latest_income_statement' => null,
+            'latest_financial_ratios' => null,
+            'collateral' => [],
+            'collateral_summary' => calculate_collateral_summary([], 0, null),
+            'scoring_result' => null,
+            'non_financial_factors' => null,
+        ];
+    }
+
+    $client = [
+        'id' => $application['client_id'],
+        'client_name' => $application['client_name'],
+        'idno' => $application['idno'],
+        'legal_form' => $application['legal_form'],
+        'registration_date' => $application['registration_date'],
+        'activity_sector' => $application['activity_sector'],
+        'caem_code' => $application['caem_code'],
+        'address' => $application['address'],
+        'status' => $application['client_status'],
+        'notes' => $application['client_notes'],
+    ];
+
+    $statement = $pdo->prepare('SELECT * FROM client_related_parties WHERE client_id = ? AND deleted_at IS NULL ORDER BY is_beneficiary DESC, ownership_percent DESC, party_name ASC');
+    $statement->execute([$client['id']]);
+    $relatedParties = $statement->fetchAll();
+
+    $statement = $pdo->prepare('SELECT * FROM financial_periods WHERE application_id = ? AND deleted_at IS NULL ORDER BY period_end_date DESC, id DESC LIMIT 1');
+    $statement->execute([$applicationId]);
+    $latestFinancialPeriod = $statement->fetch() ?: null;
+
+    $latestBalanceSheet = null;
+    $latestIncomeStatement = null;
+    $latestFinancialRatios = null;
+
+    if ($latestFinancialPeriod) {
+        $statement = $pdo->prepare('SELECT * FROM financial_balance_sheet WHERE financial_period_id = ? LIMIT 1');
+        $statement->execute([$latestFinancialPeriod['id']]);
+        $latestBalanceSheet = $statement->fetch() ?: null;
+
+        $statement = $pdo->prepare('SELECT * FROM financial_income_statement WHERE financial_period_id = ? LIMIT 1');
+        $statement->execute([$latestFinancialPeriod['id']]);
+        $latestIncomeStatement = $statement->fetch() ?: null;
+
+        $statement = $pdo->prepare('SELECT * FROM financial_ratios WHERE application_id = ? AND financial_period_id = ? LIMIT 1');
+        $statement->execute([$applicationId, $latestFinancialPeriod['id']]);
+        $latestFinancialRatios = $statement->fetch() ?: null;
+    }
+
+    $statement = $pdo->prepare('SELECT * FROM collateral WHERE application_id = ? AND deleted_at IS NULL ORDER BY accepted_collateral_value DESC, estimated_market_value DESC, id DESC');
+    $statement->execute([$applicationId]);
+    $collateral = $statement->fetchAll();
+    $collateralSummary = calculate_collateral_summary($collateral, $application['requested_amount'], $application['currency']);
+
+    $statement = $pdo->prepare('SELECT * FROM scoring_results WHERE application_id = ? ORDER BY id DESC LIMIT 1');
+    $statement->execute([$applicationId]);
+    $scoringResult = $statement->fetch() ?: null;
+
+    $nonFinancialFactors = null;
+    if ($scoringResult) {
+        try {
+            $statement = $pdo->prepare('SELECT * FROM scoring_non_financial_factors WHERE scoring_result_id = ? ORDER BY id DESC LIMIT 1');
+            $statement->execute([$scoringResult['id']]);
+            $nonFinancialFactors = $statement->fetch() ?: null;
+        } catch (PDOException) {
+            $nonFinancialFactors = null;
+        }
+    }
+
+    return [
+        'application' => $application,
+        'client' => $client,
+        'related_parties' => $relatedParties,
+        'latest_financial_period' => $latestFinancialPeriod,
+        'latest_balance_sheet' => $latestBalanceSheet,
+        'latest_income_statement' => $latestIncomeStatement,
+        'latest_financial_ratios' => $latestFinancialRatios,
+        'collateral' => $collateral,
+        'collateral_summary' => $collateralSummary,
+        'scoring_result' => $scoringResult,
+        'non_financial_factors' => $nonFinancialFactors,
+    ];
+}
+
+function generate_credit_memo_draft($context): array
+{
+    return [
+        'executive_summary' => generate_executive_summary($context),
+        'client_description' => generate_client_description($context),
+        'transaction_description' => generate_transaction_description($context),
+        'financial_analysis' => generate_financial_analysis($context),
+        'risk_analysis' => generate_risk_analysis($context),
+        'collateral_analysis' => generate_collateral_analysis($context),
+        'strengths' => generate_strengths($context),
+        'weaknesses' => generate_weaknesses($context),
+        'recommendation' => generate_recommendation($context),
+        'recommended_decision' => suggest_recommended_decision($context),
+    ];
+}
+
+function memo_value(mixed $value, string $fallback = 'not recorded'): string
+{
+    if ($value === null || $value === '') {
+        return $fallback;
+    }
+
+    return (string) $value;
+}
+
+function memo_amount(mixed $amount, ?string $currency = null): string
+{
+    return format_amount($amount, $currency ?: '');
+}
+
+function generate_executive_summary($context): string
+{
+    $application = $context['application'] ?? [];
+    $client = $context['client'] ?? [];
+    $scoring = $context['scoring_result'] ?? null;
+    $collateral = $context['collateral'] ?? [];
+    $lines = [];
+
+    $lines[] = sprintf(
+        'The application concerns a credit facility requested by %s in the amount of %s for a term of %s months. The stated purpose of the facility is %s. The application is currently at status %s.',
+        memo_value($client['client_name'] ?? null, 'the client'),
+        memo_amount($application['requested_amount'] ?? null, $application['currency'] ?? ''),
+        memo_value($application['requested_term_months'] ?? null),
+        memo_value($application['credit_purpose'] ?? null),
+        memo_value($application['status'] ?? null)
+    );
+
+    if ($scoring) {
+        $lines[] = sprintf('The preliminary scoring result indicates a %s risk level with a final score of %s.', memo_value($scoring['risk_level'] ?? null), format_score($scoring['final_score'] ?? null));
+    } else {
+        $lines[] = 'The scoring result has not been calculated yet.';
+    }
+
+    $lines[] = $collateral
+        ? sprintf('Collateral has been recorded in the system for %d item(s).', count($collateral))
+        : 'No collateral has been recorded for this application.';
+
+    return implode("\n", $lines);
+}
+
+function generate_client_description($context): string
+{
+    $client = $context['client'] ?? [];
+    $relatedParties = $context['related_parties'] ?? [];
+    $lines = [];
+
+    $lines[] = sprintf(
+        'Client: %s. IDNO: %s. Legal form: %s. Registration date: %s. Activity sector: %s. CAEM code: %s. Address: %s. Client status: %s.',
+        memo_value($client['client_name'] ?? null),
+        memo_value($client['idno'] ?? null),
+        memo_value($client['legal_form'] ?? null),
+        format_date($client['registration_date'] ?? null),
+        memo_value($client['activity_sector'] ?? null),
+        memo_value($client['caem_code'] ?? null),
+        memo_value($client['address'] ?? null),
+        memo_value($client['status'] ?? null)
+    );
+
+    if ($relatedParties) {
+        $lines[] = 'Related parties and beneficiaries recorded in the system:';
+        foreach ($relatedParties as $party) {
+            $beneficiary = !empty($party['is_beneficiary']) ? 'beneficiary' : 'not marked as beneficiary';
+            $ownership = ($party['ownership_percent'] ?? null) !== null && $party['ownership_percent'] !== '' ? ', ownership ' . format_percent($party['ownership_percent']) : '';
+            $lines[] = sprintf('- %s (%s, %s, %s%s).', memo_value($party['party_name'] ?? null), memo_value($party['party_type'] ?? null), memo_value($party['relationship_type'] ?? null), $beneficiary, $ownership);
+        }
+    } else {
+        $lines[] = 'No related parties have been recorded in the system at this stage.';
+    }
+
+    return implode("\n", $lines);
+}
+
+function generate_transaction_description($context): string
+{
+    $application = $context['application'] ?? [];
+    $lines = [];
+    $lines[] = 'Requested amount: ' . memo_amount($application['requested_amount'] ?? null, $application['currency'] ?? '');
+    $lines[] = 'Currency: ' . memo_value($application['currency'] ?? null);
+    $lines[] = 'Requested term: ' . memo_value($application['requested_term_months'] ?? null) . ' months';
+    $lines[] = 'Credit product: ' . memo_value($application['credit_product'] ?? null);
+    $lines[] = 'Credit purpose: ' . memo_value($application['credit_purpose'] ?? null);
+    $lines[] = 'Repayment source: ' . memo_value($application['repayment_source'] ?? null);
+    $lines[] = 'Existing exposure amount: ' . memo_amount($application['existing_exposure_amount'] ?? null, $application['currency'] ?? '');
+    $lines[] = 'Proposed total exposure amount: ' . memo_amount($application['proposed_total_exposure_amount'] ?? null, $application['currency'] ?? '');
+    $lines[] = 'Priority: ' . memo_value($application['priority'] ?? null);
+    if (!empty($application['notes'])) {
+        $lines[] = 'Application notes: ' . $application['notes'];
+    }
+
+    return implode("\n", $lines);
+}
+
+function generate_financial_analysis($context): string
+{
+    $application = $context['application'] ?? [];
+    $period = $context['latest_financial_period'] ?? null;
+    $balance = $context['latest_balance_sheet'] ?? null;
+    $income = $context['latest_income_statement'] ?? null;
+    $ratios = $context['latest_financial_ratios'] ?? null;
+    $currency = $application['currency'] ?? '';
+    $lines = [];
+
+    if (!$period) {
+        return 'No financial statements have been recorded for this application.';
+    }
+
+    $lines[] = sprintf('Latest financial period: %s, ending on %s.', memo_value($period['period_label'] ?? null), format_date($period['period_end_date'] ?? null));
+
+    if ($income) {
+        $lines[] = 'Revenue: ' . memo_amount($income['revenue'] ?? null, $currency);
+        $lines[] = 'EBITDA: ' . memo_amount($income['ebitda'] ?? null, $currency);
+        $lines[] = 'Net profit: ' . memo_amount($income['net_profit'] ?? null, $currency);
+    } else {
+        $lines[] = 'Income statement data is not recorded for the latest financial period.';
+    }
+
+    if ($balance) {
+        $lines[] = 'Total assets: ' . memo_amount($balance['total_assets'] ?? null, $currency);
+        $lines[] = 'Equity: ' . memo_amount($balance['equity'] ?? null, $currency);
+        $lines[] = 'Short-term debt: ' . memo_amount($balance['short_term_debt'] ?? null, $currency);
+        $lines[] = 'Long-term debt: ' . memo_amount($balance['long_term_debt'] ?? null, $currency);
+    } else {
+        $lines[] = 'Balance sheet data is not recorded for the latest financial period.';
+    }
+
+    if ($ratios) {
+        $definitions = [
+            'current_ratio' => ['Current ratio', false],
+            'debt_to_equity' => ['Debt to equity', false],
+            'debt_to_assets' => ['Debt to assets', false],
+            'equity_ratio' => ['Equity ratio', false],
+            'ebitda_margin' => ['EBITDA margin', true],
+            'net_profit_margin' => ['Net profit margin', true],
+            'interest_coverage_ratio' => ['Interest coverage ratio', false],
+            'debt_service_coverage_ratio' => ['Simplified DSCR', false],
+            'revenue_growth_percent' => ['Revenue growth percent', true],
+            'net_profit_growth_percent' => ['Net profit growth percent', true],
+        ];
+        $lines[] = 'Calculated financial ratios:';
+        foreach ($definitions as $key => [$label, $isPercent]) {
+            $lines[] = '- ' . $label . ': ' . format_ratio($ratios[$key] ?? null, $isPercent);
+        }
+    } else {
+        $lines[] = 'Financial ratios have not been calculated for the latest financial period.';
+    }
+
+    return implode("\n", $lines);
+}
+
+function generate_collateral_analysis($context): string
+{
+    $application = $context['application'] ?? [];
+    $collateral = $context['collateral'] ?? [];
+    $summary = $context['collateral_summary'] ?? [];
+    $currency = $application['currency'] ?? ($summary['application_currency'] ?? '');
+    $lines = [];
+
+    if (!$collateral) {
+        return 'No collateral has been recorded for this application.';
+    }
+
+    $lines[] = sprintf('Collateral recorded: %d item(s).', count($collateral));
+    $lines[] = 'Total estimated market value in application currency: ' . memo_amount($summary['total_estimated_application_currency'] ?? null, $currency);
+    $lines[] = 'Total accepted collateral value in application currency: ' . memo_amount($summary['total_accepted_application_currency'] ?? null, $currency);
+    $lines[] = 'Collateral coverage ratio: ' . format_percent($summary['collateral_coverage_ratio'] ?? null);
+    $lines[] = 'LTV: ' . format_percent($summary['ltv'] ?? null);
+
+    if (!empty($summary['has_different_currencies'])) {
+        $lines[] = 'Collateral includes different currencies; automatic aggregation is limited and manual review is required.';
+    }
+
+    if (!empty($summary['totals_by_currency'])) {
+        $currencies = array_map(static fn ($row) => ($row['currency'] ?? '-') . ' (' . (int) ($row['items_count'] ?? 0) . ' item(s))', $summary['totals_by_currency']);
+        $lines[] = 'Collateral currencies: ' . implode(', ', $currencies) . '.';
+    }
+
+    $lines[] = 'Main collateral items:';
+    foreach (array_slice($collateral, 0, 5) as $item) {
+        $lines[] = sprintf(
+            '- %s: %s; owner: %s; accepted value: %s; status: %s.',
+            memo_value($item['collateral_type'] ?? null),
+            memo_value($item['description'] ?? null),
+            memo_value($item['owner_name'] ?? null),
+            memo_amount($item['accepted_collateral_value'] ?? null, $item['currency'] ?? ''),
+            memo_value($item['pledge_status'] ?? null)
+        );
+    }
+
+    return implode("\n", $lines);
+}
+
+function generate_risk_analysis($context): string
+{
+    $period = $context['latest_financial_period'] ?? null;
+    $balance = $context['latest_balance_sheet'] ?? null;
+    $ratios = $context['latest_financial_ratios'] ?? null;
+    $summary = $context['collateral_summary'] ?? [];
+    $scoring = $context['scoring_result'] ?? null;
+    $lines = [];
+
+    if (!$period) {
+        $lines[] = 'Data completeness risk: no financial statements have been recorded for this application.';
+    }
+    if ($period && !$ratios) {
+        $lines[] = 'Analytical completeness risk: financial ratios have not been calculated for the latest financial period.';
+    }
+    if (($summary['collateral_coverage_ratio'] ?? null) !== null && (float) $summary['collateral_coverage_ratio'] < 100.0) {
+        $lines[] = 'Collateral risk: collateral coverage is below 100% and should be reviewed manually.';
+    }
+    if ($balance && (float) ($balance['equity'] ?? 0) < 0.0) {
+        $lines[] = 'Capitalization risk: equity is negative in the latest balance sheet.';
+    }
+    if ($ratios && ((isset($ratios['debt_to_assets']) && (float) $ratios['debt_to_assets'] > 0.6) || (isset($ratios['debt_to_equity']) && (float) $ratios['debt_to_equity'] > 2.0))) {
+        $lines[] = 'Leverage risk: debt indicators suggest elevated debt burden.';
+    }
+    if ($ratios && ((isset($ratios['ebitda_margin']) && (float) $ratios['ebitda_margin'] < 5.0) || (isset($ratios['net_profit_margin']) && (float) $ratios['net_profit_margin'] < 2.0))) {
+        $lines[] = 'Profitability risk: profitability margins are weak based on the latest calculated ratios.';
+    }
+    if (!empty($summary['has_different_currencies'])) {
+        $lines[] = 'Collateral currency risk: collateral includes different currencies and requires manual interpretation.';
+    }
+    if ($scoring) {
+        $lines[] = sprintf('Scoring risk level: %s, final score %s.', memo_value($scoring['risk_level'] ?? null), format_score($scoring['final_score'] ?? null));
+        if (!empty($scoring['expert_override'])) {
+            $lines[] = 'Expert override warning: the scoring result includes an expert override and should be reviewed together with the override rationale.';
+        }
+    } else {
+        $lines[] = 'Scoring risk: the scoring result has not been calculated yet.';
+    }
+
+    if (!$lines) {
+        $lines[] = 'The available information is insufficient for a complete automated risk summary; manual analytical assessment is required.';
+    }
+
+    return implode("\n", $lines);
+}
+
+function generate_strengths($context): string
+{
+    $balance = $context['latest_balance_sheet'] ?? null;
+    $income = $context['latest_income_statement'] ?? null;
+    $ratios = $context['latest_financial_ratios'] ?? null;
+    $summary = $context['collateral_summary'] ?? [];
+    $scoring = $context['scoring_result'] ?? null;
+    $relatedParties = $context['related_parties'] ?? [];
+    $strengths = [];
+
+    if (($summary['collateral_coverage_ratio'] ?? null) !== null && (float) $summary['collateral_coverage_ratio'] >= 100.0) {
+        $strengths[] = ((float) $summary['collateral_coverage_ratio'] >= 150.0 ? 'Strong' : 'Acceptable') . ' collateral coverage based on accepted collateral value in application currency.';
+    }
+    if ($scoring && in_array($scoring['risk_level'], ['low', 'moderate'], true)) {
+        $strengths[] = 'Low or moderate risk level according to the latest scoring result.';
+    }
+    if ($balance && (float) ($balance['equity'] ?? 0) > 0.0) {
+        $strengths[] = 'Positive equity recorded in the latest balance sheet.';
+    }
+    if ($income && (float) ($income['net_profit'] ?? 0) > 0.0) {
+        $strengths[] = 'Positive profitability recorded in the latest income statement.';
+    }
+    if ($ratios && isset($ratios['revenue_growth_percent']) && (float) $ratios['revenue_growth_percent'] > 0.0) {
+        $strengths[] = 'Revenue growth is positive versus the previous analyzed period.';
+    }
+    if ($relatedParties) {
+        $strengths[] = 'Related parties and/or beneficiaries are recorded in the system, supporting transparency of the ownership and relationship structure.';
+    }
+
+    if (!$strengths) {
+        return 'No major strengths were automatically identified based on the data currently recorded in the system. This section should be completed manually.';
+    }
+
+    return implode("\n", array_map(static fn ($item) => '- ' . $item, $strengths));
+}
+
+function generate_weaknesses($context): string
+{
+    $period = $context['latest_financial_period'] ?? null;
+    $balance = $context['latest_balance_sheet'] ?? null;
+    $income = $context['latest_income_statement'] ?? null;
+    $ratios = $context['latest_financial_ratios'] ?? null;
+    $summary = $context['collateral_summary'] ?? [];
+    $scoring = $context['scoring_result'] ?? null;
+    $collateral = $context['collateral'] ?? [];
+    $weaknesses = [];
+
+    if (!$period) {
+        $weaknesses[] = 'Financial statements have not been recorded.';
+    }
+    if (!$scoring) {
+        $weaknesses[] = 'Scoring has not been calculated.';
+    }
+    if (!$collateral) {
+        $weaknesses[] = 'No collateral has been recorded.';
+    }
+    if (($summary['collateral_coverage_ratio'] ?? null) !== null && (float) $summary['collateral_coverage_ratio'] < 100.0) {
+        $weaknesses[] = 'Collateral coverage is below 100%.';
+    }
+    if ($balance && (float) ($balance['equity'] ?? 0) < 0.0) {
+        $weaknesses[] = 'Negative equity is recorded in the latest balance sheet.';
+    }
+    if ($ratios && ((isset($ratios['debt_to_assets']) && (float) $ratios['debt_to_assets'] > 0.6) || (isset($ratios['debt_to_equity']) && (float) $ratios['debt_to_equity'] > 2.0))) {
+        $weaknesses[] = 'High leverage indicators are present.';
+    }
+    if ($ratios && isset($ratios['current_ratio']) && (float) $ratios['current_ratio'] < 1.0) {
+        $weaknesses[] = 'Weak liquidity based on current ratio below 1.0.';
+    }
+    if ($income && (float) ($income['net_profit'] ?? 0) < 0.0) {
+        $weaknesses[] = 'Negative net profit is recorded.';
+    }
+    if ($ratios && isset($ratios['revenue_growth_percent']) && (float) $ratios['revenue_growth_percent'] < 0.0) {
+        $weaknesses[] = 'Revenue declined versus the previous analyzed period.';
+    }
+    if (!$period || !$ratios || !$scoring) {
+        $weaknesses[] = 'Some analytical data is incomplete and requires manual review.';
+    }
+
+    if (!$weaknesses) {
+        return 'No major weaknesses were automatically identified based on the data currently recorded in the system. This section should be reviewed manually.';
+    }
+
+    return implode("\n", array_map(static fn ($item) => '- ' . $item, array_values(array_unique($weaknesses))));
+}
+
+function generate_recommendation($context): string
+{
+    $period = $context['latest_financial_period'] ?? null;
+    $summary = $context['collateral_summary'] ?? [];
+    $scoring = $context['scoring_result'] ?? null;
+    $coverage = $summary['collateral_coverage_ratio'] ?? null;
+
+    if (!$period) {
+        return 'A preliminary recommendation cannot be completed without financial information. The analyst should request or record financial statements before preparing a final recommendation.';
+    }
+
+    if (!$scoring) {
+        return 'The recommendation requires completion of the scoring analysis. The analyst should review the application data, financial statements and collateral before finalizing this section.';
+    }
+
+    if (in_array($scoring['risk_level'], ['low', 'moderate'], true) && $coverage !== null && (float) $coverage >= 100.0) {
+        return 'Based on the currently recorded data, the application may be considered for a positive recommendation, subject to manual verification of financial information, collateral documentation and any internal conditions required by policy.';
+    }
+
+    if ($scoring['risk_level'] === 'medium') {
+        return 'The scoring result indicates medium risk. Additional manual analysis is recommended before formulating a final position, including review of repayment capacity, leverage, collateral enforceability and sector context.';
+    }
+
+    if (in_array($scoring['risk_level'], ['high', 'very_high'], true)) {
+        return 'The scoring result indicates elevated risk. A cautious approach is recommended, and the analyst should consider requesting additional information, clarifications or risk mitigants before any positive recommendation.';
+    }
+
+    return 'The recommendation should be finalized manually after review of all financial, collateral and non-financial factors.';
+}
+
+function suggest_recommended_decision($context): string
+{
+    $period = $context['latest_financial_period'] ?? null;
+    $balance = $context['latest_balance_sheet'] ?? null;
+    $summary = $context['collateral_summary'] ?? [];
+    $scoring = $context['scoring_result'] ?? null;
+    $collateral = $context['collateral'] ?? [];
+    $coverage = $summary['collateral_coverage_ratio'] ?? null;
+
+    if ($balance && (float) ($balance['equity'] ?? 0) < 0.0 && !$collateral) {
+        return 'reject';
+    }
+    if (!$period || !$scoring) {
+        return 'request_additional_information';
+    }
+    if (in_array($scoring['risk_level'], ['low', 'moderate'], true) && $coverage !== null && (float) $coverage >= 100.0) {
+        return 'approve';
+    }
+    if ($scoring['risk_level'] === 'medium') {
+        return 'postpone';
+    }
+    if (in_array($scoring['risk_level'], ['high', 'very_high'], true)) {
+        return 'request_additional_information';
+    }
+
+    return 'request_additional_information';
+}
+
+function format_memo_text($text): string
+{
+    return nl2br(e($text));
+}

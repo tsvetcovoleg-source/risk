@@ -64,7 +64,15 @@ if (!$id || !$client) {
 <?php elseif (($_GET['fin_status'] ?? '') === 'empty'): ?>
     <div class="alert alert-warning border-0 shadow-sm">Client was created, but no public financial reports were found for this IDNO.</div>
 <?php elseif (!empty($_GET['fin_error'])): ?>
-    <div class="alert alert-danger border-0 shadow-sm"><?= e($_GET['fin_error']) ?></div>
+    <div class="alert alert-danger border-0 shadow-sm">
+        <div><?= e($_GET['fin_error']) ?></div>
+        <?php if (!empty($_GET['fin_debug'])): ?>
+            <details class="mt-3">
+                <summary class="fw-semibold">Debug details</summary>
+                <pre class="bg-light border rounded p-3 mt-2 small text-break" style="white-space: pre-wrap;"><?= e($_GET['fin_debug']) ?></pre>
+            </details>
+        <?php endif; ?>
+    </div>
 <?php endif; ?>
 
 <div class="card border-0 shadow-sm mb-4">

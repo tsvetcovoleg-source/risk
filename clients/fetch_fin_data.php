@@ -151,6 +151,7 @@ function find_python_executable(): ?string
 
 function ensure_financial_fetcher_runtime(): array
 {
+    $debug = [];
     $rootDir = dirname(__DIR__);
     $runtimeDir = $rootDir . '/runtime/financial_fetcher';
     $venvDir = $runtimeDir . '/venv';
@@ -159,33 +160,61 @@ function ensure_financial_fetcher_runtime(): array
     $installMarker = $runtimeDir . '/requirements.installed';
     $browserMarker = $runtimeDir . '/chromium.installed';
 
+    $debug[] = [
+        'step' => 'runtime_start',
+        'php_user' => function_exists('get_current_user') ? get_current_user() : null,
+        'disabled_functions' => ini_get('disable_functions') ?: '',
+        'root_dir' => $rootDir,
+        'runtime_dir' => $runtimeDir,
+        'requirements_exists' => is_file($requirements),
+    ];
+
     if (!is_dir($runtimeDir) && !mkdir($runtimeDir, 0775, true) && !is_dir($runtimeDir)) {
+        $debug[] = ['step' => 'mkdir_runtime_failed', 'runtime_dir' => $runtimeDir];
         return [
             'ok' => false,
             'message' => 'Cannot create runtime directory for Python financial fetcher: ' . $runtimeDir,
             'output' => '',
+            'debug' => $debug,
         ];
     }
 
+    $debug[] = [
+        'step' => 'runtime_ready',
+        'runtime_writable' => is_writable($runtimeDir),
+        'runtime_permissions' => substr(sprintf('%o', fileperms($runtimeDir) ?: 0), -4),
+    ];
+
     $systemPython = find_python_executable();
+    $debug[] = ['step' => 'python_lookup', 'python' => $systemPython];
     if ($systemPython === null) {
         return [
             'ok' => false,
             'message' => 'Python is not available on the server. Install python3 to fetch financial data.',
             'output' => '',
+            'debug' => $debug,
         ];
     }
 
     $venvPython = $venvDir . '/bin/python';
     if (!is_file($venvPython)) {
         $venvResult = run_shell_command(escapeshellarg($systemPython) . ' -m venv ' . escapeshellarg($venvDir));
+        $debug[] = [
+            'step' => 'create_venv',
+            'exit_code' => $venvResult['exit_code'],
+            'command' => $venvResult['command'],
+            'output_tail' => substr($venvResult['output'], -1200),
+        ];
         if ($venvResult['exit_code'] !== 0) {
             return [
                 'ok' => false,
                 'message' => 'Cannot create Python virtual environment. Install python3-venv or allow venv creation.',
                 'output' => $venvResult['output'],
+                'debug' => $debug,
             ];
         }
+    } else {
+        $debug[] = ['step' => 'venv_exists', 'venv_python' => $venvPython];
     }
 
     $python = is_file($venvPython) ? $venvPython : $systemPython;
@@ -193,6 +222,12 @@ function ensure_financial_fetcher_runtime(): array
         && filemtime($installMarker) !== false
         && filemtime($requirements) !== false
         && filemtime($installMarker) >= filemtime($requirements);
+    $debug[] = [
+        'step' => 'requirements_check',
+        'python' => $python,
+        'requirements' => $requirements,
+        'requirements_fresh' => $requirementsAreFresh,
+    ];
 
     if (!$requirementsAreFresh) {
         $pipResult = run_shell_command(
@@ -200,11 +235,18 @@ function ensure_financial_fetcher_runtime(): array
             . ' -m pip install --disable-pip-version-check --no-input -r '
             . escapeshellarg($requirements)
         );
+        $debug[] = [
+            'step' => 'pip_install',
+            'exit_code' => $pipResult['exit_code'],
+            'command' => $pipResult['command'],
+            'output_tail' => substr($pipResult['output'], -2000),
+        ];
         if ($pipResult['exit_code'] !== 0) {
             return [
                 'ok' => false,
                 'message' => 'Cannot install Python dependencies for financial fetcher.',
                 'output' => $pipResult['output'],
+                'debug' => $debug,
             ];
         }
 
@@ -217,22 +259,33 @@ function ensure_financial_fetcher_runtime(): array
             . ' ' . escapeshellarg($python)
             . ' -m playwright install chromium'
         );
+        $debug[] = [
+            'step' => 'playwright_install_chromium',
+            'exit_code' => $playwrightResult['exit_code'],
+            'command' => $playwrightResult['command'],
+            'output_tail' => substr($playwrightResult['output'], -2000),
+        ];
         if ($playwrightResult['exit_code'] !== 0) {
             return [
                 'ok' => false,
                 'message' => 'Cannot install Playwright Chromium for financial fetcher.',
                 'output' => $playwrightResult['output'],
+                'debug' => $debug,
             ];
         }
 
         @touch($browserMarker);
+    } else {
+        $debug[] = ['step' => 'chromium_exists', 'browser_dir' => $browserDir];
     }
 
+    $debug[] = ['step' => 'runtime_ok', 'python' => $python, 'browser_dir' => $browserDir];
     return [
         'ok' => true,
         'python' => $python,
         'browser_dir' => $browserDir,
         'output' => '',
+        'debug' => $debug,
     ];
 }
 
@@ -246,6 +299,33 @@ function format_fetch_error(string $message, string $output = ''): string
     return $message . ' Details: ' . substr($cleanOutput, 0, 700);
 }
 
+function format_financial_fetch_debug(array $fetchResult): string
+{
+    $debug = [
+        'exit_code' => $fetchResult['exit_code'] ?? null,
+        'error_message' => $fetchResult['error_message'] ?? null,
+        'debug' => $fetchResult['debug'] ?? [],
+        'output_tail' => isset($fetchResult['output']) ? substr((string) $fetchResult['output'], -2500) : '',
+    ];
+
+    $text = json_encode($debug, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+    if ($text === false) {
+        $text = var_export($debug, true);
+    }
+
+    return substr($text, 0, 4000);
+}
+
+function build_financial_fetch_redirect(int $clientId, string $message, ?string $debug = null): string
+{
+    $url = url('clients/view.php?id=' . $clientId . '&fin_error=' . rawurlencode($message));
+    if ($debug !== null && $debug !== '') {
+        $url .= '&fin_debug=' . rawurlencode($debug);
+    }
+
+    return $url;
+}
+
 function run_financial_fetcher(string $idno): array
 {
     $runtime = ensure_financial_fetcher_runtime();
@@ -254,6 +334,7 @@ function run_financial_fetcher(string $idno): array
             'exit_code' => 1,
             'output' => $runtime['output'] ?? '',
             'error_message' => format_fetch_error($runtime['message'] ?? 'Financial fetcher runtime is not available.', $runtime['output'] ?? ''),
+            'debug' => $runtime['debug'] ?? [],
         ];
     }
 
@@ -268,6 +349,12 @@ function run_financial_fetcher(string $idno): array
         'exit_code' => $result['exit_code'],
         'output' => $result['output'],
         'error_message' => format_fetch_error('Financial fetch failed. Depozitar may be unavailable or Chromium system libraries may be missing.', $result['output']),
+        'debug' => array_merge($runtime['debug'] ?? [], [[
+            'step' => 'run_fetcher_script',
+            'exit_code' => $result['exit_code'],
+            'command' => $result['command'],
+            'output_tail' => substr($result['output'], -2500),
+        ]]),
     ];
 }
 
@@ -285,7 +372,8 @@ if ($fetchResult['exit_code'] !== 0) {
         'exit_code' => $fetchResult['exit_code'],
         'output' => substr($fetchResult['output'], 0, 2000),
     ]);
-    redirect(url('clients/view.php?id=' . $clientId . '&fin_error=' . rawurlencode($fetchResult['error_message'] ?? 'Financial fetch failed. Check Python dependencies and Depozitar availability.')));
+    $debugText = format_financial_fetch_debug($fetchResult);
+    redirect(build_financial_fetch_redirect($clientId, $fetchResult['error_message'] ?? 'Financial fetch failed. Check Python dependencies and Depozitar availability.', $debugText));
 }
 
 $jsonStart = strpos($fetchResult['output'], '{');
@@ -296,7 +384,8 @@ if (!is_array($payload) || !isset($payload['rows']) || !is_array($payload['rows'
         'idno' => $client['idno'],
         'output' => substr($fetchResult['output'], 0, 2000),
     ]);
-    redirect(url('clients/view.php?id=' . $clientId . '&fin_error=' . rawurlencode('Financial fetch returned invalid JSON.')));
+    $debugText = format_financial_fetch_debug($fetchResult + ['error_message' => 'Financial fetch returned invalid JSON.']);
+    redirect(build_financial_fetch_redirect($clientId, 'Financial fetch returned invalid JSON.', $debugText));
 }
 
 $rows = $payload['rows'];

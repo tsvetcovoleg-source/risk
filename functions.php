@@ -418,3 +418,115 @@ function ratio_columns(): array
 
     return $columns;
 }
+
+function format_currency_amount(float|int|string|null $amount, ?string $currency): string
+{
+    if ($amount === null || $amount === '') {
+        return 'N/A';
+    }
+
+    return number_format((float) $amount, 2, '.', ' ') . ' ' . ($currency ?: '');
+}
+
+function calculate_collateral_summary(array $collateralItems, float|int|string|null $requestedAmount, ?string $applicationCurrency): array
+{
+    $requestedAmountValue = (float) ($requestedAmount ?? 0);
+    $currency = (string) ($applicationCurrency ?? '');
+    $totalsByCurrency = [];
+    $totalEstimatedApplicationCurrency = 0.0;
+    $totalAcceptedApplicationCurrency = 0.0;
+    $hasDifferentCurrencies = false;
+
+    foreach ($collateralItems as $item) {
+        $itemCurrency = (string) ($item['currency'] ?? '');
+        $estimated = (float) ($item['estimated_market_value'] ?? 0);
+        $accepted = (float) ($item['accepted_collateral_value'] ?? 0);
+
+        if (!isset($totalsByCurrency[$itemCurrency])) {
+            $totalsByCurrency[$itemCurrency] = [
+                'currency' => $itemCurrency,
+                'estimated_market_value' => 0.0,
+                'accepted_collateral_value' => 0.0,
+                'items_count' => 0,
+            ];
+        }
+
+        $totalsByCurrency[$itemCurrency]['estimated_market_value'] += $estimated;
+        $totalsByCurrency[$itemCurrency]['accepted_collateral_value'] += $accepted;
+        $totalsByCurrency[$itemCurrency]['items_count']++;
+
+        if ($itemCurrency === $currency) {
+            $totalEstimatedApplicationCurrency += $estimated;
+            $totalAcceptedApplicationCurrency += $accepted;
+        } else {
+            $hasDifferentCurrencies = true;
+        }
+    }
+
+    $coverageRatio = null;
+    if ($requestedAmountValue > 0) {
+        $coverageRatio = ($totalAcceptedApplicationCurrency / $requestedAmountValue) * 100;
+    }
+
+    $ltv = null;
+    if ($requestedAmountValue > 0 && $totalAcceptedApplicationCurrency > 0) {
+        $ltv = ($requestedAmountValue / $totalAcceptedApplicationCurrency) * 100;
+    }
+
+    $warnings = [];
+    if ($hasDifferentCurrencies) {
+        $warnings[] = 'Collateral includes different currencies. Manual review is required.';
+    }
+    if ($requestedAmountValue <= 0) {
+        $warnings[] = 'Requested amount is zero or missing. Coverage ratios are not calculated.';
+    }
+
+    return [
+        'requested_amount' => $requestedAmountValue,
+        'application_currency' => $currency,
+        'total_estimated_application_currency' => $totalEstimatedApplicationCurrency,
+        'total_accepted_application_currency' => $totalAcceptedApplicationCurrency,
+        'totals_by_currency' => array_values($totalsByCurrency),
+        'has_different_currencies' => $hasDifferentCurrencies,
+        'collateral_coverage_ratio' => $coverageRatio,
+        'ltv' => $ltv,
+        'warnings' => $warnings,
+    ];
+}
+
+function interpret_collateral_coverage(float|int|string|null $coverageRatio): string
+{
+    if ($coverageRatio === null || $coverageRatio === '') {
+        return 'Not calculated';
+    }
+
+    $value = (float) $coverageRatio;
+    if ($value < 50) {
+        return 'weak collateral coverage';
+    }
+    if ($value <= 100) {
+        return 'partial collateral coverage';
+    }
+    if ($value <= 150) {
+        return 'acceptable collateral coverage';
+    }
+
+    return 'strong collateral coverage';
+}
+
+function interpret_ltv(float|int|string|null $ltv): string
+{
+    if ($ltv === null || $ltv === '') {
+        return 'Not calculated';
+    }
+
+    $value = (float) $ltv;
+    if ($value > 100) {
+        return 'high LTV';
+    }
+    if ($value >= 70) {
+        return 'moderate LTV';
+    }
+
+    return 'conservative LTV';
+}

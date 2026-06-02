@@ -18,6 +18,9 @@ $metricValues = [
     'applications_with_financial_statements' => 0,
     'audited_financial_periods' => 0,
     'management_account_periods' => 0,
+    'total_ratio_records' => 0,
+    'applications_with_calculated_ratios' => 0,
+    'periods_without_calculated_ratios' => 0,
 ];
 
 if ($pdo instanceof PDO) {
@@ -33,6 +36,9 @@ if ($pdo instanceof PDO) {
         'applications_with_financial_statements' => "SELECT COUNT(DISTINCT application_id) FROM financial_periods WHERE deleted_at IS NULL",
         'audited_financial_periods' => "SELECT COUNT(*) FROM financial_periods WHERE deleted_at IS NULL AND is_audited = 1",
         'management_account_periods' => "SELECT COUNT(*) FROM financial_periods WHERE deleted_at IS NULL AND period_type = 'management'",
+        'total_ratio_records' => "SELECT COUNT(*) FROM financial_ratios fr INNER JOIN financial_periods fp ON fp.id = fr.financial_period_id WHERE fp.deleted_at IS NULL",
+        'applications_with_calculated_ratios' => "SELECT COUNT(DISTINCT fr.application_id) FROM financial_ratios fr INNER JOIN financial_periods fp ON fp.id = fr.financial_period_id WHERE fp.deleted_at IS NULL",
+        'periods_without_calculated_ratios' => "SELECT COUNT(*) FROM financial_periods fp LEFT JOIN financial_ratios fr ON fr.financial_period_id = fp.id WHERE fp.deleted_at IS NULL AND fr.id IS NULL",
     ];
 
     foreach ($queries as $key => $query) {
@@ -54,10 +60,13 @@ $metrics = [
     ['label' => 'Applications with financial statements', 'value' => $metricValues['applications_with_financial_statements'], 'tone' => 'info'],
     ['label' => 'Audited financial periods', 'value' => $metricValues['audited_financial_periods'], 'tone' => 'success'],
     ['label' => 'Management account periods', 'value' => $metricValues['management_account_periods'], 'tone' => 'warning'],
+    ['label' => 'Total ratio records', 'value' => $metricValues['total_ratio_records'], 'tone' => 'primary'],
+    ['label' => 'Applications with calculated ratios', 'value' => $metricValues['applications_with_calculated_ratios'], 'tone' => 'success'],
+    ['label' => 'Periods without calculated ratios', 'value' => $metricValues['periods_without_calculated_ratios'], 'tone' => 'warning'],
 ];
 
 $nextSteps = [
-    'Financial statement quality checks and financial ratio analysis',
+    'Refine financial ratio thresholds and prepare inputs for the future scoring model',
     'Collateral records and valuation support',
     'SME scoring model and credit opinion templates',
     'Credit committee workflow, audit logs, dashboards, and reports',

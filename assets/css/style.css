@@ -1,0 +1,146 @@
+:root {
+    --app-bg: #f3f6f9;
+    --app-navy: #172b4d;
+    --app-navy-soft: #243b63;
+    --app-border: #d9e2ec;
+    --app-muted: #66788a;
+}
+
+body {
+    background: var(--app-bg);
+    color: #1f2933;
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+.app-shell {
+    display: flex;
+    min-height: 100vh;
+}
+
+.sidebar {
+    background: var(--app-navy);
+    color: #fff;
+    flex: 0 0 270px;
+    min-height: 100vh;
+    padding: 1.25rem 1rem;
+    position: sticky;
+    top: 0;
+}
+
+.sidebar-brand {
+    align-items: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+    display: flex;
+    gap: .75rem;
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+}
+
+.brand-mark {
+    align-items: center;
+    background: #ffffff;
+    border-radius: .6rem;
+    color: var(--app-navy);
+    display: inline-flex;
+    font-weight: 700;
+    height: 42px;
+    justify-content: center;
+    letter-spacing: .04em;
+    width: 52px;
+}
+
+.brand-title {
+    font-size: .95rem;
+    font-weight: 600;
+    line-height: 1.25;
+}
+
+.sidebar-nav .nav-link {
+    border-radius: .55rem;
+    color: rgba(255, 255, 255, 0.78);
+    font-weight: 500;
+    margin: .15rem 0;
+    padding: .75rem .9rem;
+}
+
+.sidebar-nav .nav-link:hover,
+.sidebar-nav .nav-link.active {
+    background: var(--app-navy-soft);
+    color: #fff;
+}
+
+.main-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.page-heading {
+    max-width: 920px;
+}
+
+.eyebrow {
+    color: var(--app-muted);
+    font-size: .78rem;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+}
+
+.card {
+    border-radius: .85rem;
+}
+
+.metric-card {
+    min-height: 150px;
+}
+
+.metric-dot {
+    border-radius: 50%;
+    display: inline-block;
+    height: .75rem;
+    margin-bottom: 1rem;
+    width: .75rem;
+}
+
+.next-step-item {
+    align-items: flex-start;
+    background: #f8fafc;
+    border: 1px solid var(--app-border);
+    border-radius: .75rem;
+    display: flex;
+    gap: .75rem;
+    height: 100%;
+    padding: 1rem;
+}
+
+.check-marker {
+    color: #1f6f4a;
+    font-weight: 700;
+}
+
+.module-placeholder {
+    border-left: 4px solid var(--app-navy-soft);
+}
+
+@media (max-width: 991.98px) {
+    .app-shell {
+        display: block;
+    }
+
+    .sidebar {
+        min-height: auto;
+        position: static;
+    }
+
+    .sidebar-nav {
+        display: grid;
+        gap: .25rem;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 575.98px) {
+    .sidebar-nav {
+        grid-template-columns: 1fr;
+    }
+}

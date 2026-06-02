@@ -39,6 +39,13 @@ $metricValues = [
     'memos_recommended_for_approval_with_conditions' => 0,
     'memos_recommended_for_rejection' => 0,
     'memos_requiring_additional_information' => 0,
+    'total_committee_decisions' => 0,
+    'committee_approved_decisions' => 0,
+    'committee_approved_with_conditions' => 0,
+    'committee_rejected_decisions' => 0,
+    'committee_postponed_decisions' => 0,
+    'committee_returned_for_revision' => 0,
+    'applications_without_committee_decision' => 0,
 ];
 
 if ($pdo instanceof PDO) {
@@ -75,6 +82,13 @@ if ($pdo instanceof PDO) {
         'memos_recommended_for_approval_with_conditions' => "SELECT COUNT(*) FROM credit_memos cm INNER JOIN credit_applications ca ON ca.id = cm.application_id WHERE ca.deleted_at IS NULL AND cm.recommended_decision = 'approve_with_conditions'",
         'memos_recommended_for_rejection' => "SELECT COUNT(*) FROM credit_memos cm INNER JOIN credit_applications ca ON ca.id = cm.application_id WHERE ca.deleted_at IS NULL AND cm.recommended_decision = 'reject'",
         'memos_requiring_additional_information' => "SELECT COUNT(*) FROM credit_memos cm INNER JOIN credit_applications ca ON ca.id = cm.application_id WHERE ca.deleted_at IS NULL AND cm.recommended_decision = 'request_additional_information'",
+        'total_committee_decisions' => "SELECT COUNT(*) FROM committee_decisions cd INNER JOIN credit_applications ca ON ca.id = cd.application_id WHERE ca.deleted_at IS NULL",
+        'committee_approved_decisions' => "SELECT COUNT(*) FROM committee_decisions cd INNER JOIN credit_applications ca ON ca.id = cd.application_id WHERE ca.deleted_at IS NULL AND cd.decision = 'approved'",
+        'committee_approved_with_conditions' => "SELECT COUNT(*) FROM committee_decisions cd INNER JOIN credit_applications ca ON ca.id = cd.application_id WHERE ca.deleted_at IS NULL AND cd.decision = 'approved_with_conditions'",
+        'committee_rejected_decisions' => "SELECT COUNT(*) FROM committee_decisions cd INNER JOIN credit_applications ca ON ca.id = cd.application_id WHERE ca.deleted_at IS NULL AND cd.decision = 'rejected'",
+        'committee_postponed_decisions' => "SELECT COUNT(*) FROM committee_decisions cd INNER JOIN credit_applications ca ON ca.id = cd.application_id WHERE ca.deleted_at IS NULL AND cd.decision = 'postponed'",
+        'committee_returned_for_revision' => "SELECT COUNT(*) FROM committee_decisions cd INNER JOIN credit_applications ca ON ca.id = cd.application_id WHERE ca.deleted_at IS NULL AND cd.decision = 'returned_for_revision'",
+        'applications_without_committee_decision' => "SELECT COUNT(*) FROM credit_applications ca WHERE ca.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM committee_decisions cd WHERE cd.application_id = ca.id)",
     ];
 
     foreach ($queries as $key => $query) {
@@ -117,13 +131,20 @@ $metrics = [
     ['label' => 'Memos recommended for approval with conditions', 'value' => $metricValues['memos_recommended_for_approval_with_conditions'], 'tone' => 'info'],
     ['label' => 'Memos recommended for rejection', 'value' => $metricValues['memos_recommended_for_rejection'], 'tone' => 'danger'],
     ['label' => 'Memos requiring additional information', 'value' => $metricValues['memos_requiring_additional_information'], 'tone' => 'secondary'],
+    ['label' => 'Total committee decisions', 'value' => $metricValues['total_committee_decisions'], 'tone' => 'primary'],
+    ['label' => 'Approved committee decisions', 'value' => $metricValues['committee_approved_decisions'], 'tone' => 'success'],
+    ['label' => 'Approved with conditions', 'value' => $metricValues['committee_approved_with_conditions'], 'tone' => 'info'],
+    ['label' => 'Rejected committee decisions', 'value' => $metricValues['committee_rejected_decisions'], 'tone' => 'danger'],
+    ['label' => 'Postponed committee decisions', 'value' => $metricValues['committee_postponed_decisions'], 'tone' => 'warning'],
+    ['label' => 'Returned for revision', 'value' => $metricValues['committee_returned_for_revision'], 'tone' => 'secondary'],
+    ['label' => 'Applications without committee decision', 'value' => $metricValues['applications_without_committee_decision'], 'tone' => 'warning'],
 ];
 
 $nextSteps = [
     'Refine financial ratio thresholds and prepare inputs for the future scoring model',
     'Enhance collateral valuation review and manual legal checklist',
     'Enhance credit memo conditions, document checklist, and analyst quality review',
-    'Credit committee workflow, audit logs, dashboards, and reports',
+    'Committee minutes printout, workflow controls, dashboards, and reports',
 ];
 
 require_once __DIR__ . '/header.php';

@@ -21,6 +21,11 @@ $metricValues = [
     'total_ratio_records' => 0,
     'applications_with_calculated_ratios' => 0,
     'periods_without_calculated_ratios' => 0,
+    'total_collateral_items' => 0,
+    'applications_with_collateral' => 0,
+    'accepted_collateral_items' => 0,
+    'registered_collateral_items' => 0,
+    'applications_without_collateral' => 0,
 ];
 
 if ($pdo instanceof PDO) {
@@ -39,6 +44,11 @@ if ($pdo instanceof PDO) {
         'total_ratio_records' => "SELECT COUNT(*) FROM financial_ratios fr INNER JOIN financial_periods fp ON fp.id = fr.financial_period_id WHERE fp.deleted_at IS NULL",
         'applications_with_calculated_ratios' => "SELECT COUNT(DISTINCT fr.application_id) FROM financial_ratios fr INNER JOIN financial_periods fp ON fp.id = fr.financial_period_id WHERE fp.deleted_at IS NULL",
         'periods_without_calculated_ratios' => "SELECT COUNT(*) FROM financial_periods fp LEFT JOIN financial_ratios fr ON fr.financial_period_id = fp.id WHERE fp.deleted_at IS NULL AND fr.id IS NULL",
+        'total_collateral_items' => "SELECT COUNT(*) FROM collateral WHERE deleted_at IS NULL",
+        'applications_with_collateral' => "SELECT COUNT(DISTINCT application_id) FROM collateral WHERE deleted_at IS NULL",
+        'accepted_collateral_items' => "SELECT COUNT(*) FROM collateral WHERE deleted_at IS NULL AND pledge_status = 'accepted'",
+        'registered_collateral_items' => "SELECT COUNT(*) FROM collateral WHERE deleted_at IS NULL AND pledge_status = 'registered'",
+        'applications_without_collateral' => "SELECT COUNT(*) FROM credit_applications ca WHERE ca.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM collateral co WHERE co.application_id = ca.id AND co.deleted_at IS NULL)",
     ];
 
     foreach ($queries as $key => $query) {
@@ -63,11 +73,16 @@ $metrics = [
     ['label' => 'Total ratio records', 'value' => $metricValues['total_ratio_records'], 'tone' => 'primary'],
     ['label' => 'Applications with calculated ratios', 'value' => $metricValues['applications_with_calculated_ratios'], 'tone' => 'success'],
     ['label' => 'Periods without calculated ratios', 'value' => $metricValues['periods_without_calculated_ratios'], 'tone' => 'warning'],
+    ['label' => 'Total collateral items', 'value' => $metricValues['total_collateral_items'], 'tone' => 'primary'],
+    ['label' => 'Applications with collateral', 'value' => $metricValues['applications_with_collateral'], 'tone' => 'success'],
+    ['label' => 'Accepted collateral items', 'value' => $metricValues['accepted_collateral_items'], 'tone' => 'info'],
+    ['label' => 'Registered collateral items', 'value' => $metricValues['registered_collateral_items'], 'tone' => 'success'],
+    ['label' => 'Applications without collateral', 'value' => $metricValues['applications_without_collateral'], 'tone' => 'warning'],
 ];
 
 $nextSteps = [
     'Refine financial ratio thresholds and prepare inputs for the future scoring model',
-    'Collateral records and valuation support',
+    'Enhance collateral valuation review and manual legal checklist',
     'SME scoring model and credit opinion templates',
     'Credit committee workflow, audit logs, dashboards, and reports',
 ];

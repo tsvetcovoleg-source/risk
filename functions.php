@@ -158,6 +158,54 @@ function format_percent(float|int|string|null $value): string
     return number_format((float) $value, 2, '.', ' ') . '%';
 }
 
+function format_interest_rate(float|int|string|null $value): string
+{
+    if ($value === null || $value === '') {
+        return 'N/A';
+    }
+
+    return number_format((float) $value, 2, '.', ' ') . '%';
+}
+
+function calculate_monthly_annuity_payment(mixed $principal, mixed $annualInterestRate, mixed $termMonths): ?float
+{
+    if ($principal === null || $principal === '' || $termMonths === null || $termMonths === '' || $annualInterestRate === null || $annualInterestRate === '') {
+        return null;
+    }
+
+    if (!is_numeric($principal) || !is_numeric($annualInterestRate) || !is_numeric($termMonths)) {
+        return null;
+    }
+
+    $principal = (float) $principal;
+    $annualInterestRate = (float) $annualInterestRate;
+    $termMonths = (int) $termMonths;
+
+    if ($principal <= 0.0 || $termMonths <= 0 || $annualInterestRate < 0.0) {
+        return null;
+    }
+
+    if ($annualInterestRate == 0.0) {
+        return round($principal / $termMonths, 2);
+    }
+
+    $monthlyRate = $annualInterestRate / 100 / 12;
+    $denominator = 1 - pow(1 + $monthlyRate, -$termMonths);
+
+    if ($denominator == 0.0) {
+        return null;
+    }
+
+    return round($principal * $monthlyRate / $denominator, 2);
+}
+
+function calculate_annual_debt_service_amount(mixed $principal, mixed $annualInterestRate, mixed $termMonths): ?float
+{
+    $monthlyPayment = calculate_monthly_annuity_payment($principal, $annualInterestRate, $termMonths);
+
+    return $monthlyPayment === null ? null : round($monthlyPayment * 12, 2);
+}
+
 function parse_decimal(mixed $value): ?string
 {
     if ($value === null) {
@@ -380,7 +428,7 @@ function safe_divide(mixed $numerator, mixed $denominator): ?float
     return (float) ($numerator ?? 0) / (float) $denominator;
 }
 
-function calculate_financial_ratios(array $balance, array $income, ?array $previousIncome = null): array
+function calculate_financial_ratios(array $balance, array $income, ?array $previousIncome = null, ?array $application = null): array
 {
     $balance = calculate_balance_sheet_totals($balance);
     $income = calculate_income_statement_totals($income);
@@ -398,9 +446,7 @@ function calculate_financial_ratios(array $balance, array $income, ?array $previ
         'ebitda_margin' => ($margin = safe_divide($income['ebitda'] ?? null, $income['revenue'] ?? null)) === null ? null : $margin * 100,
         'net_profit_margin' => ($margin = safe_divide($income['net_profit'] ?? null, $income['revenue'] ?? null)) === null ? null : $margin * 100,
         'interest_coverage_ratio' => safe_divide($income['ebit'] ?? null, $income['interest_expense'] ?? null),
-        // Simplified MVP DSCR: principal repayment schedule is not implemented yet.
-        // Future formula: cash flow available for debt service / scheduled debt service.
-        'debt_service_coverage_ratio' => safe_divide($income['ebitda'] ?? null, $income['interest_expense'] ?? null),
+        'debt_service_coverage_ratio' => safe_divide($income['ebitda'] ?? null, $application['annual_debt_service_amount'] ?? null),
         'revenue_growth_percent' => null,
         'net_profit_growth_percent' => null,
     ];
@@ -489,7 +535,7 @@ function get_ratio_warnings(?array $balance, ?array $income, ?array $previousInc
     }
 
     if ($income && (float) ($income['interest_expense'] ?? 0) == 0.0) {
-        $warnings[] = 'Interest expense is zero; interest coverage and simplified DSCR are not calculated.';
+        $warnings[] = 'Interest expense is zero; interest coverage is not calculated. DSCR uses estimated annual debt service separately.';
     }
 
     if ($income && (float) ($income['ebit'] ?? 0) <= 0.0) {
@@ -551,7 +597,7 @@ function ratio_definitions(): array
             'label' => 'Coverage',
             'ratios' => [
                 'interest_coverage_ratio' => ['label' => 'Interest coverage ratio', 'formula' => 'ebit / interest_expense', 'percent' => false],
-                'debt_service_coverage_ratio' => ['label' => 'Simplified DSCR', 'formula' => 'ebitda / interest_expense', 'percent' => false, 'comment' => 'Simplified MVP DSCR. Principal repayment schedule is not implemented yet; future formula should use cash flow available for debt service / scheduled debt service.'],
+                'debt_service_coverage_ratio' => ['label' => 'DSCR based on estimated annual debt service', 'formula' => 'ebitda / annual_debt_service_amount', 'percent' => false, 'comment' => 'For MVP, DSCR is calculated as EBITDA divided by the estimated annual debt service amount for the requested loan.'],
             ],
         ],
         'growth' => [
@@ -798,7 +844,7 @@ function scoring_financial_factor_definitions(): array
         'ebitda_margin' => ['label' => 'EBITDA margin', 'percent' => true, 'scorer' => 'score_ebitda_margin'],
         'net_profit_margin' => ['label' => 'Net profit margin', 'percent' => true, 'scorer' => 'score_net_profit_margin'],
         'interest_coverage_ratio' => ['label' => 'Interest coverage ratio', 'percent' => false, 'scorer' => 'score_interest_coverage'],
-        'debt_service_coverage_ratio' => ['label' => 'Simplified DSCR', 'percent' => false, 'scorer' => 'score_dscr'],
+        'debt_service_coverage_ratio' => ['label' => 'DSCR based on estimated annual debt service', 'percent' => false, 'scorer' => 'score_dscr'],
         'revenue_growth_percent' => ['label' => 'Revenue growth percent', 'percent' => true, 'scorer' => 'score_growth_percent'],
         'net_profit_growth_percent' => ['label' => 'Net profit growth percent', 'percent' => true, 'scorer' => 'score_growth_percent'],
     ];
@@ -1199,6 +1245,13 @@ function generate_transaction_description($context): string
     $lines[] = 'Requested amount: ' . memo_amount($application['requested_amount'] ?? null, $application['currency'] ?? '');
     $lines[] = 'Currency: ' . memo_value($application['currency'] ?? null);
     $lines[] = 'Requested term: ' . memo_value($application['requested_term_months'] ?? null) . ' months';
+    $lines[] = 'Annual interest rate: ' . format_interest_rate($application['interest_rate'] ?? null);
+    $lines[] = 'Estimated annual debt service: ' . (($application['annual_debt_service_amount'] ?? null) === null || ($application['annual_debt_service_amount'] ?? '') === '' ? 'N/A' : memo_amount($application['annual_debt_service_amount'], $application['currency'] ?? ''));
+    if (($application['interest_rate'] ?? null) !== null && ($application['interest_rate'] ?? '') !== '' && ($application['annual_debt_service_amount'] ?? null) !== null && ($application['annual_debt_service_amount'] ?? '') !== '') {
+        $lines[] = sprintf('The requested facility carries an annual interest rate of %.2f%%. Based on the requested amount, term and interest rate, the estimated annual debt service amount is %s.', (float) $application['interest_rate'], memo_amount($application['annual_debt_service_amount'], $application['currency'] ?? ''));
+    } else {
+        $lines[] = 'The annual interest rate or estimated annual debt service amount has not been specified.';
+    }
     $lines[] = 'Credit product: ' . memo_value($application['credit_product'] ?? null);
     $lines[] = 'Credit purpose: ' . memo_value($application['credit_purpose'] ?? null);
     $lines[] = 'Repayment source: ' . memo_value($application['repayment_source'] ?? null);
@@ -1254,13 +1307,18 @@ function generate_financial_analysis($context): string
             'ebitda_margin' => ['EBITDA margin', true],
             'net_profit_margin' => ['Net profit margin', true],
             'interest_coverage_ratio' => ['Interest coverage ratio', false],
-            'debt_service_coverage_ratio' => ['Simplified DSCR', false],
+            'debt_service_coverage_ratio' => ['DSCR based on estimated annual debt service', false],
             'revenue_growth_percent' => ['Revenue growth percent', true],
             'net_profit_growth_percent' => ['Net profit growth percent', true],
         ];
         $lines[] = 'Calculated financial ratios:';
         foreach ($definitions as $key => [$label, $isPercent]) {
             $lines[] = '- ' . $label . ': ' . format_ratio($ratios[$key] ?? null, $isPercent);
+        }
+        if (($ratios['debt_service_coverage_ratio'] ?? null) !== null) {
+            $lines[] = 'The debt service coverage ratio based on the estimated annual debt service of the requested loan is ' . format_ratio($ratios['debt_service_coverage_ratio'] ?? null) . '.';
+        } else {
+            $lines[] = 'DSCR is not calculated because estimated annual debt service is missing.';
         }
     } else {
         $lines[] = 'Financial ratios have not been calculated for the latest financial period.';

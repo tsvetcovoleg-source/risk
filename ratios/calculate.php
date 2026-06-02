@@ -17,7 +17,7 @@ try {
     $pdo->beginTransaction();
 
     $statement = $pdo->prepare(
-        'SELECT fp.*, ca.id AS application_id
+        'SELECT fp.*, ca.id AS application_id, ca.requested_amount, ca.requested_term_months, ca.interest_rate, ca.annual_debt_service_amount
          FROM financial_periods fp
          INNER JOIN credit_applications ca ON ca.id = fp.application_id AND ca.deleted_at IS NULL
          WHERE fp.id = ? AND fp.deleted_at IS NULL'
@@ -51,7 +51,24 @@ try {
     $previousIncome = $statement->fetch() ?: null;
     $previousIncome = $previousIncome ? calculate_income_statement_totals($previousIncome) : null;
 
-    $ratios = calculate_financial_ratios($balance, $income, $previousIncome);
+    $application = [
+        'requested_amount' => $period['requested_amount'] ?? null,
+        'requested_term_months' => $period['requested_term_months'] ?? null,
+        'interest_rate' => $period['interest_rate'] ?? null,
+        'annual_debt_service_amount' => $period['annual_debt_service_amount'] ?? null,
+    ];
+    if (($application['annual_debt_service_amount'] === null || $application['annual_debt_service_amount'] === '')
+        && $application['requested_amount'] !== null && $application['requested_amount'] !== ''
+        && $application['requested_term_months'] !== null && $application['requested_term_months'] !== ''
+        && $application['interest_rate'] !== null && $application['interest_rate'] !== '') {
+        $application['annual_debt_service_amount'] = calculate_annual_debt_service_amount(
+            $application['requested_amount'],
+            $application['interest_rate'],
+            $application['requested_term_months']
+        );
+    }
+
+    $ratios = calculate_financial_ratios($balance, $income, $previousIncome, $application);
     $columns = array_keys(ratio_columns());
 
     $statement = $pdo->prepare('SELECT * FROM financial_ratios WHERE financial_period_id = ? LIMIT 1');

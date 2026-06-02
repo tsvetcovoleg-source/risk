@@ -14,7 +14,7 @@ $previousIncome = null;
 
 if ($financialPeriodId && $pdo instanceof PDO) {
     $statement = $pdo->prepare(
-        'SELECT fp.*, ca.application_number, ca.requested_amount, ca.currency, ca.status, ca.client_id, c.client_name, c.idno
+        'SELECT fp.*, ca.application_number, ca.requested_amount, ca.currency, ca.status, ca.client_id, ca.interest_rate, ca.annual_debt_service_amount, c.client_name, c.idno
          FROM financial_periods fp
          INNER JOIN credit_applications ca ON ca.id = fp.application_id AND ca.deleted_at IS NULL
          INNER JOIN clients c ON c.id = ca.client_id
@@ -74,7 +74,7 @@ if (!$context) {
     <div class="card-body p-4">
         <h2 class="h5 mb-3">Application and client information</h2>
         <div class="row g-3">
-            <?php foreach (['Application number' => $context['application_number'], 'Client name' => $context['client_name'], 'IDNO' => $context['idno'], 'Requested amount' => format_amount($context['requested_amount'], $context['currency']), 'Currency' => $context['currency'], 'Application status' => $context['status'], 'Period label' => $context['period_label'], 'Period end date' => format_date($context['period_end_date'])] as $label => $value): ?>
+            <?php foreach (['Application number' => $context['application_number'], 'Client name' => $context['client_name'], 'IDNO' => $context['idno'], 'Requested amount' => format_amount($context['requested_amount'], $context['currency']), 'Currency' => $context['currency'], 'Annual interest rate' => format_interest_rate($context['interest_rate'] ?? null), 'Estimated new loan annual debt service' => (($context['annual_debt_service_amount'] ?? null) === null || ($context['annual_debt_service_amount'] ?? '') === '' ? 'N/A' : format_amount($context['annual_debt_service_amount'], $context['currency'])), 'Application status' => $context['status'], 'Period label' => $context['period_label'], 'Period end date' => format_date($context['period_end_date'])] as $label => $value): ?>
                 <div class="col-md-3"><div class="text-secondary small"><?= e($label) ?></div><div class="fw-semibold"><?= e($value ?: '-') ?></div></div>
             <?php endforeach; ?>
         </div>
@@ -93,7 +93,7 @@ if (!$context) {
         <div class="card border-0 shadow-sm mb-4">
             <div class="card-body p-4">
                 <h2 class="h5 mb-3"><?= e($group['label']) ?></h2>
-                <?php if ($group['label'] === 'Coverage'): ?><p class="text-secondary small">Simplified DSCR for MVP uses EBITDA / interest expense because the principal repayment schedule is not implemented yet.</p><?php endif; ?>
+                <?php if ($group['label'] === 'Coverage'): ?><p class="text-secondary small">For MVP, DSCR is calculated as EBITDA divided by the estimated annual debt service amount for the requested loan. DSCR is not calculated when estimated annual debt service is missing.</p><?php endif; ?>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle">
                         <thead class="table-light"><tr><th>Ratio name</th><th>Formula</th><th>Calculated value</th><th>Interpretation</th><th>Warning / comment</th></tr></thead>

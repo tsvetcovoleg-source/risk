@@ -22,6 +22,8 @@ function render_committee_decision_context(array $context, bool $full = true): v
                         'Requested amount' => format_amount($application['requested_amount'], $application['currency']),
                         'Currency' => $application['currency'],
                         'Requested term' => ($application['requested_term_months'] ?: '-') . ' months',
+                        'Annual interest rate' => format_interest_rate($application['interest_rate'] ?? null),
+                        'Estimated annual debt service' => (($application['annual_debt_service_amount'] ?? null) === null || ($application['annual_debt_service_amount'] ?? '') === '' ? 'N/A' : format_amount($application['annual_debt_service_amount'], $application['currency'])),
                         'Credit product' => $application['credit_product'],
                         'Credit purpose' => $application['credit_purpose'],
                         'Repayment source' => $application['repayment_source'],
@@ -91,7 +93,7 @@ function render_committee_decision_context(array $context, bool $full = true): v
                                     'ebitda_margin' => ['EBITDA margin', true],
                                     'net_profit_margin' => ['Net profit margin', true],
                                     'interest_coverage_ratio' => ['Interest coverage ratio', false],
-                                    'debt_service_coverage_ratio' => ['Simplified DSCR', false],
+                                    'debt_service_coverage_ratio' => ['DSCR based on estimated annual debt service', false],
                                 ] as $field => $definition): ?>
                                     <tr><td><?= e($definition[0]) ?></td><td class="text-end fw-semibold"><?= e(format_ratio($ratios[$field] ?? null, $definition[1])) ?></td></tr>
                                 <?php endforeach; ?>

@@ -26,6 +26,16 @@ try {
     $statement = $pdo->prepare('SELECT * FROM financial_periods WHERE application_id = ? AND deleted_at IS NULL ORDER BY period_end_date ASC, id ASC');
     $statement->execute([$applicationId]);
     $periods = $statement->fetchAll();
+    if (($application['annual_debt_service_amount'] === null || $application['annual_debt_service_amount'] === '')
+        && ($application['requested_amount'] ?? null) !== null && ($application['requested_amount'] ?? '') !== ''
+        && ($application['requested_term_months'] ?? null) !== null && ($application['requested_term_months'] ?? '') !== ''
+        && ($application['interest_rate'] ?? null) !== null && ($application['interest_rate'] ?? '') !== '') {
+        $application['annual_debt_service_amount'] = calculate_annual_debt_service_amount(
+            $application['requested_amount'],
+            $application['interest_rate'],
+            $application['requested_term_months']
+        );
+    }
     if (!$periods) {
         throw new RuntimeException('No financial periods are available for this application.');
     }
@@ -55,7 +65,7 @@ try {
         $existingStatement->execute([$period['id']]);
         $oldRatio = $existingStatement->fetch() ?: null;
 
-        $ratios = calculate_financial_ratios($balance, $income, $previousIncome);
+        $ratios = calculate_financial_ratios($balance, $income, $previousIncome, $application);
         $params = ['application_id' => $applicationId, 'financial_period_id' => $period['id']];
         foreach ($columns as $column) {
             $params[$column] = $ratios[$column] ?? null;

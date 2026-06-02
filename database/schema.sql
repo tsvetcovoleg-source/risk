@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS credit_applications (
     requested_amount DECIMAL(18,2) NOT NULL DEFAULT 0.00,
     currency ENUM('MDL', 'EUR', 'USD') NOT NULL DEFAULT 'MDL',
     requested_term_months INT UNSIGNED NULL,
+    interest_rate DECIMAL(8,4) NULL,
+    annual_debt_service_amount DECIMAL(18,2) NULL,
     credit_product VARCHAR(150) NULL,
     credit_purpose TEXT NULL,
     repayment_source TEXT NULL,

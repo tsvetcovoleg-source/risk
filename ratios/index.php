@@ -75,7 +75,7 @@ require_once dirname(__DIR__) . '/sidebar.php';
                 <thead class="table-light">
                     <tr>
                         <th>Application number</th><th>Client name</th><th>Period label</th><th>Period end date</th>
-                        <th>Current ratio</th><th>Debt to equity</th><th>Debt to assets</th><th>EBITDA margin</th><th>Net profit margin</th><th>Interest coverage</th><th>Simplified DSCR</th><th>Calculated at</th><th class="text-end">Actions</th>
+                        <th>Current ratio</th><th>Debt to equity</th><th>Debt to assets</th><th>EBITDA margin</th><th>Net profit margin</th><th>Interest coverage</th><th>DSCR based on estimated annual debt service</th><th>Calculated at</th><th class="text-end">Actions</th>
                     </tr>
                 </thead>
                 <tbody>

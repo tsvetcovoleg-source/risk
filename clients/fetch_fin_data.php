@@ -111,19 +111,163 @@ function extract_meta_csv_field(?string $csvText, string $fieldName): ?string
     return null;
 }
 
-function run_financial_fetcher(string $idno): array
+function run_shell_command(string $command): array
 {
-    $script = dirname(__DIR__) . '/scripts/fetch_financials_by_idno.py';
-    $python = trim((string) shell_exec('command -v python3 2>/dev/null')) ?: 'python3';
-    $command = escapeshellcmd($python) . ' ' . escapeshellarg($script) . ' ' . escapeshellarg($idno) . ' 2>&1';
+    if (!function_exists('exec')) {
+        return [
+            'exit_code' => 1,
+            'output' => 'PHP exec() is disabled on this server.',
+            'command' => $command,
+        ];
+    }
+
     $output = [];
     $exitCode = 0;
 
-    exec($command, $output, $exitCode);
+    exec($command . ' 2>&1', $output, $exitCode);
 
     return [
         'exit_code' => $exitCode,
         'output' => implode("\n", $output),
+        'command' => $command,
+    ];
+}
+
+function find_python_executable(): ?string
+{
+    if (!function_exists('shell_exec')) {
+        return null;
+    }
+
+    foreach (['python3', 'python'] as $binary) {
+        $path = trim((string) shell_exec('command -v ' . escapeshellarg($binary) . ' 2>/dev/null'));
+        if ($path !== '') {
+            return $path;
+        }
+    }
+
+    return null;
+}
+
+function ensure_financial_fetcher_runtime(): array
+{
+    $rootDir = dirname(__DIR__);
+    $runtimeDir = $rootDir . '/runtime/financial_fetcher';
+    $venvDir = $runtimeDir . '/venv';
+    $browserDir = $runtimeDir . '/ms-playwright';
+    $requirements = $rootDir . '/scripts/requirements-financials.txt';
+    $installMarker = $runtimeDir . '/requirements.installed';
+    $browserMarker = $runtimeDir . '/chromium.installed';
+
+    if (!is_dir($runtimeDir) && !mkdir($runtimeDir, 0775, true) && !is_dir($runtimeDir)) {
+        return [
+            'ok' => false,
+            'message' => 'Cannot create runtime directory for Python financial fetcher: ' . $runtimeDir,
+            'output' => '',
+        ];
+    }
+
+    $systemPython = find_python_executable();
+    if ($systemPython === null) {
+        return [
+            'ok' => false,
+            'message' => 'Python is not available on the server. Install python3 to fetch financial data.',
+            'output' => '',
+        ];
+    }
+
+    $venvPython = $venvDir . '/bin/python';
+    if (!is_file($venvPython)) {
+        $venvResult = run_shell_command(escapeshellarg($systemPython) . ' -m venv ' . escapeshellarg($venvDir));
+        if ($venvResult['exit_code'] !== 0) {
+            return [
+                'ok' => false,
+                'message' => 'Cannot create Python virtual environment. Install python3-venv or allow venv creation.',
+                'output' => $venvResult['output'],
+            ];
+        }
+    }
+
+    $python = is_file($venvPython) ? $venvPython : $systemPython;
+    $requirementsAreFresh = is_file($installMarker)
+        && filemtime($installMarker) !== false
+        && filemtime($requirements) !== false
+        && filemtime($installMarker) >= filemtime($requirements);
+
+    if (!$requirementsAreFresh) {
+        $pipResult = run_shell_command(
+            escapeshellarg($python)
+            . ' -m pip install --disable-pip-version-check --no-input -r '
+            . escapeshellarg($requirements)
+        );
+        if ($pipResult['exit_code'] !== 0) {
+            return [
+                'ok' => false,
+                'message' => 'Cannot install Python dependencies for financial fetcher.',
+                'output' => $pipResult['output'],
+            ];
+        }
+
+        @touch($installMarker);
+    }
+
+    if (!is_file($browserMarker)) {
+        $playwrightResult = run_shell_command(
+            'PLAYWRIGHT_BROWSERS_PATH=' . escapeshellarg($browserDir)
+            . ' ' . escapeshellarg($python)
+            . ' -m playwright install chromium'
+        );
+        if ($playwrightResult['exit_code'] !== 0) {
+            return [
+                'ok' => false,
+                'message' => 'Cannot install Playwright Chromium for financial fetcher.',
+                'output' => $playwrightResult['output'],
+            ];
+        }
+
+        @touch($browserMarker);
+    }
+
+    return [
+        'ok' => true,
+        'python' => $python,
+        'browser_dir' => $browserDir,
+        'output' => '',
+    ];
+}
+
+function format_fetch_error(string $message, string $output = ''): string
+{
+    $cleanOutput = trim(preg_replace('/\s+/', ' ', $output) ?: '');
+    if ($cleanOutput === '') {
+        return $message;
+    }
+
+    return $message . ' Details: ' . substr($cleanOutput, 0, 700);
+}
+
+function run_financial_fetcher(string $idno): array
+{
+    $runtime = ensure_financial_fetcher_runtime();
+    if (empty($runtime['ok'])) {
+        return [
+            'exit_code' => 1,
+            'output' => $runtime['output'] ?? '',
+            'error_message' => format_fetch_error($runtime['message'] ?? 'Financial fetcher runtime is not available.', $runtime['output'] ?? ''),
+        ];
+    }
+
+    $script = dirname(__DIR__) . '/scripts/fetch_financials_by_idno.py';
+    $command = 'PLAYWRIGHT_BROWSERS_PATH=' . escapeshellarg((string) $runtime['browser_dir'])
+        . ' ' . escapeshellarg((string) $runtime['python'])
+        . ' ' . escapeshellarg($script)
+        . ' ' . escapeshellarg($idno);
+    $result = run_shell_command($command);
+
+    return [
+        'exit_code' => $result['exit_code'],
+        'output' => $result['output'],
+        'error_message' => format_fetch_error('Financial fetch failed. Depozitar may be unavailable or Chromium system libraries may be missing.', $result['output']),
     ];
 }
 
@@ -141,7 +285,7 @@ if ($fetchResult['exit_code'] !== 0) {
         'exit_code' => $fetchResult['exit_code'],
         'output' => substr($fetchResult['output'], 0, 2000),
     ]);
-    redirect(url('clients/view.php?id=' . $clientId . '&fin_error=' . rawurlencode('Financial fetch failed. Check Python dependencies and Depozitar availability.')));
+    redirect(url('clients/view.php?id=' . $clientId . '&fin_error=' . rawurlencode($fetchResult['error_message'] ?? 'Financial fetch failed. Check Python dependencies and Depozitar availability.')));
 }
 
 $jsonStart = strpos($fetchResult['output'], '{');

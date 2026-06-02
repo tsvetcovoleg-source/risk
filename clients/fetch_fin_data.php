@@ -133,29 +133,145 @@ function run_shell_command(string $command): array
     ];
 }
 
-function find_python_executable(): ?string
+function python_version(string $python): ?array
 {
-    if (!function_exists('shell_exec')) {
+    $result = run_shell_command(
+        escapeshellarg($python) . ' -c ' . escapeshellarg('import sys; print("%d.%d.%d" % sys.version_info[:3])')
+    );
+
+    if ($result['exit_code'] !== 0) {
         return null;
     }
 
-    foreach (['python3', 'python'] as $binary) {
+    $version = trim($result['output']);
+    if (!preg_match('/^(\d+)\.(\d+)\.(\d+)/', $version, $matches)) {
+        return null;
+    }
+
+    return [
+        'raw' => $version,
+        'major' => (int) $matches[1],
+        'minor' => (int) $matches[2],
+        'patch' => (int) $matches[3],
+    ];
+}
+
+function is_supported_financial_fetcher_python(?array $version): bool
+{
+    if ($version === null) {
+        return false;
+    }
+
+    return $version['major'] > 3 || ($version['major'] === 3 && $version['minor'] >= 8);
+}
+
+function compare_python_versions(array $left, array $right): int
+{
+    foreach (['major', 'minor', 'patch'] as $field) {
+        if ($left[$field] === $right[$field]) {
+            continue;
+        }
+
+        return $left[$field] <=> $right[$field];
+    }
+
+    return 0;
+}
+
+function python_candidates(): array
+{
+    $candidates = [];
+
+    if (!function_exists('shell_exec')) {
+        return $candidates;
+    }
+
+    foreach (['python3.12', 'python3.11', 'python3.10', 'python3.9', 'python3.8', 'python3', 'python'] as $binary) {
         $path = trim((string) shell_exec('command -v ' . escapeshellarg($binary) . ' 2>/dev/null'));
         if ($path !== '') {
-            return $path;
+            $candidates[] = $path;
         }
     }
 
-    return null;
+    foreach ([
+        '/opt/alt/python312/bin/python3',
+        '/opt/alt/python311/bin/python3',
+        '/opt/alt/python310/bin/python3',
+        '/opt/alt/python39/bin/python3',
+        '/opt/alt/python38/bin/python3',
+        '/usr/local/bin/python3.12',
+        '/usr/local/bin/python3.11',
+        '/usr/local/bin/python3.10',
+        '/usr/local/bin/python3.9',
+        '/usr/local/bin/python3.8',
+        '/usr/bin/python3.12',
+        '/usr/bin/python3.11',
+        '/usr/bin/python3.10',
+        '/usr/bin/python3.9',
+        '/usr/bin/python3.8',
+        '/bin/python3',
+    ] as $path) {
+        if (is_file($path) && is_executable($path)) {
+            $candidates[] = $path;
+        }
+    }
+
+    return array_values(array_unique($candidates));
+}
+
+function find_python_executable(?array &$debug = null): ?string
+{
+    $bestSupported = null;
+    $bestSupportedVersion = null;
+    $bestAny = null;
+    $bestAnyVersion = null;
+    $candidateDebug = [];
+
+    foreach (python_candidates() as $candidate) {
+        $version = python_version($candidate);
+        $candidateDebug[] = [
+            'path' => $candidate,
+            'version' => $version['raw'] ?? null,
+            'supported' => is_supported_financial_fetcher_python($version),
+        ];
+
+        if ($version === null) {
+            continue;
+        }
+
+        if ($bestAnyVersion === null || compare_python_versions($version, $bestAnyVersion) > 0) {
+            $bestAny = $candidate;
+            $bestAnyVersion = $version;
+        }
+
+        if (is_supported_financial_fetcher_python($version)
+            && ($bestSupportedVersion === null || compare_python_versions($version, $bestSupportedVersion) > 0)) {
+            $bestSupported = $candidate;
+            $bestSupportedVersion = $version;
+        }
+    }
+
+    if (is_array($debug)) {
+        $debug[] = [
+            'step' => 'python_candidates',
+            'candidates' => $candidateDebug,
+            'selected_supported_python' => $bestSupported,
+            'selected_supported_version' => $bestSupportedVersion['raw'] ?? null,
+            'best_available_python' => $bestAny,
+            'best_available_version' => $bestAnyVersion['raw'] ?? null,
+        ];
+    }
+
+    return $bestSupported ?? $bestAny;
 }
 
 function default_financial_fetcher_requirements(): array
 {
     return [
-        'beautifulsoup4',
-        'lxml',
-        'pandas',
-        'playwright',
+        'beautifulsoup4==4.12.3',
+        'lxml==4.9.4',
+        'pandas==1.5.3',
+        'playwright==1.48.0',
     ];
 }
 
@@ -212,13 +328,23 @@ function ensure_financial_fetcher_runtime(): array
         ];
     }
 
-    $systemPython = find_python_executable();
-    $debug[] = ['step' => 'python_lookup', 'python' => $systemPython];
+    $systemPython = find_python_executable($debug);
+    $systemPythonVersion = $systemPython !== null ? python_version($systemPython) : null;
+    $debug[] = ['step' => 'python_lookup', 'python' => $systemPython, 'version' => $systemPythonVersion['raw'] ?? null];
     if ($systemPython === null) {
         return [
             'ok' => false,
             'message' => 'Python is not available on the server. Install python3 to fetch financial data.',
             'output' => '',
+            'debug' => $debug,
+        ];
+    }
+
+    if (!is_supported_financial_fetcher_python($systemPythonVersion)) {
+        return [
+            'ok' => false,
+            'message' => 'Python 3.8 or newer is required for the financial fetcher. The best available Python is ' . ($systemPythonVersion['raw'] ?? 'unknown') . '. Ask hosting support to enable Python 3.8+ (for example /opt/alt/python311/bin/python3).',
+            'output' => 'Unsupported Python version: ' . ($systemPythonVersion['raw'] ?? 'unknown'),
             'debug' => $debug,
         ];
     }
@@ -256,13 +382,20 @@ function ensure_financial_fetcher_runtime(): array
             'output_tail' => substr($pipCheck['output'], -1200),
         ];
 
-        if ($pipCheck['exit_code'] === 0) {
+        $venvVersion = python_version($venvPython);
+        $debug[] = [
+            'step' => 'venv_python_version_check',
+            'version' => $venvVersion['raw'] ?? null,
+            'supported' => is_supported_financial_fetcher_python($venvVersion),
+        ];
+
+        if ($pipCheck['exit_code'] === 0 && is_supported_financial_fetcher_python($venvVersion)) {
             $python = $venvPython;
             $usingVenv = true;
         } else {
             $debug[] = [
                 'step' => 'venv_fallback_to_system_python',
-                'reason' => 'venv exists but pip is not available inside it',
+                'reason' => 'venv exists but pip is not available inside it or its Python version is unsupported',
                 'python' => $systemPython,
             ];
         }

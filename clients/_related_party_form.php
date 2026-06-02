@@ -1,0 +1,11 @@
+<?php if (!empty($errors)): ?>
+    <div class="col-12"><div class="alert alert-danger"><ul class="mb-0"><?php foreach ($errors as $error): ?><li><?= e($error) ?></li><?php endforeach; ?></ul></div></div>
+<?php endif; ?>
+<input type="hidden" name="client_id" value="<?= e($party['client_id'] ?? $client['id'] ?? '') ?>">
+<div class="col-md-6"><label class="form-label" for="party_name">Party name *</label><input class="form-control" id="party_name" name="party_name" required value="<?= e($party['party_name'] ?? '') ?>"></div>
+<div class="col-md-3"><label class="form-label" for="party_type">Party type</label><select class="form-select" id="party_type" name="party_type"><?php foreach ($partyTypes as $type): ?><option value="<?= e($type) ?>" <?= selected_attr($party['party_type'] ?? 'individual', $type) ?>><?= e($type) ?></option><?php endforeach; ?></select></div>
+<div class="col-md-3"><label class="form-label" for="idno_or_idnp">IDNO / IDNP</label><input class="form-control" id="idno_or_idnp" name="idno_or_idnp" value="<?= e($party['idno_or_idnp'] ?? '') ?>"></div>
+<div class="col-md-4"><label class="form-label" for="relationship_type">Relationship type</label><select class="form-select" id="relationship_type" name="relationship_type"><?php foreach ($relationshipTypes as $type): ?><option value="<?= e($type) ?>" <?= selected_attr($party['relationship_type'] ?? 'other', $type) ?>><?= e($type) ?></option><?php endforeach; ?></select></div>
+<div class="col-md-3"><label class="form-label" for="ownership_percent">Ownership percent</label><input class="form-control" type="number" min="0" max="100" step="0.01" id="ownership_percent" name="ownership_percent" value="<?= e($party['ownership_percent'] ?? '') ?>"></div>
+<div class="col-md-3 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" id="is_beneficiary" name="is_beneficiary" value="1" <?= checked_attr($party['is_beneficiary'] ?? false) ?>><label class="form-check-label" for="is_beneficiary">Is beneficiary</label></div></div>
+<div class="col-12"><label class="form-label" for="notes">Notes</label><textarea class="form-control" id="notes" name="notes" rows="3"><?= e($party['notes'] ?? '') ?></textarea></div>

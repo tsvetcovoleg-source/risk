@@ -168,6 +168,7 @@ function ensure_financial_fetcher_runtime(): array
     $browserDir = $runtimeDir . '/ms-playwright';
     $requirements = $rootDir . '/scripts/requirements-financials.txt';
     $defaultRequirements = default_financial_fetcher_requirements();
+    $effectiveRequirements = $requirements;
     $installMarker = $runtimeDir . '/requirements.installed';
     $browserMarker = $runtimeDir . '/chromium.installed';
 
@@ -180,6 +181,7 @@ function ensure_financial_fetcher_runtime(): array
         'requirements' => $requirements,
         'requirements_exists' => is_file($requirements),
         'default_requirements' => $defaultRequirements,
+        'runtime_version' => 'requirements-fallback-v2',
     ];
 
     if (!is_dir($runtimeDir) && !mkdir($runtimeDir, 0775, true) && !is_dir($runtimeDir)) {
@@ -197,6 +199,18 @@ function ensure_financial_fetcher_runtime(): array
         'runtime_writable' => is_writable($runtimeDir),
         'runtime_permissions' => substr(sprintf('%o', fileperms($runtimeDir) ?: 0), -4),
     ];
+
+    if (!is_file($requirements)) {
+        $effectiveRequirements = $runtimeDir . '/requirements-default.txt';
+        $requirementsWriteResult = @file_put_contents($effectiveRequirements, implode("\n", $defaultRequirements) . "\n");
+        $debug[] = [
+            'step' => 'requirements_file_missing_created_runtime_default',
+            'source_requirements' => $requirements,
+            'effective_requirements' => $effectiveRequirements,
+            'write_ok' => $requirementsWriteResult !== false,
+            'default_requirements' => $defaultRequirements,
+        ];
+    }
 
     $systemPython = find_python_executable();
     $debug[] = ['step' => 'python_lookup', 'python' => $systemPython];
@@ -267,28 +281,30 @@ function ensure_financial_fetcher_runtime(): array
         'output_tail' => substr($dependencyCheck['output'], -1600),
     ];
 
-    if (!$dependenciesAvailable && !is_file($requirements)) {
-        $debug[] = [
-            'step' => 'requirements_file_missing_fallback_to_defaults',
-            'requirements' => $requirements,
-            'default_requirements' => $defaultRequirements,
+    if (!$dependenciesAvailable && !is_file($effectiveRequirements)) {
+        return [
+            'ok' => false,
+            'message' => 'Cannot prepare Python dependency list for financial fetcher.',
+            'output' => 'Requirements file not found and runtime default requirements file could not be created: ' . $effectiveRequirements,
+            'debug' => $debug,
         ];
     }
 
     $requirementsAreFresh = $dependenciesAvailable
         || (is_file($installMarker)
             && filemtime($installMarker) !== false
-            && is_file($requirements)
-            && filemtime($requirements) !== false
-            && filemtime($installMarker) >= filemtime($requirements));
+            && is_file($effectiveRequirements)
+            && filemtime($effectiveRequirements) !== false
+            && filemtime($installMarker) >= filemtime($effectiveRequirements));
     $debug[] = [
         'step' => 'requirements_check',
         'python' => $python,
         'requirements' => $requirements,
+        'effective_requirements' => $effectiveRequirements,
         'requirements_fresh' => $requirementsAreFresh,
         'dependencies_available' => $dependenciesAvailable,
         'install_mode' => $usingVenv ? 'venv' : 'system_user',
-        'requirements_source' => is_file($requirements) ? 'file' : 'built_in_defaults',
+        'requirements_source' => is_file($requirements) ? 'file' : 'runtime_built_in_defaults',
     ];
 
     if (!$requirementsAreFresh) {
@@ -297,8 +313,8 @@ function ensure_financial_fetcher_runtime(): array
             $pipCommand .= '--user ';
         }
 
-        if (is_file($requirements)) {
-            $pipCommand .= '-r ' . escapeshellarg($requirements);
+        if (is_file($effectiveRequirements)) {
+            $pipCommand .= '-r ' . escapeshellarg($effectiveRequirements);
         } else {
             $pipCommand .= implode(' ', array_map('escapeshellarg', $defaultRequirements));
         }

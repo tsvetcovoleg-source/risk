@@ -18,6 +18,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Check cPanel SSH connectivity
+        run: |
+          echo "Checking TCP connectivity to ${CPANEL_HOST}:${CPANEL_PORT}"
+          nc -vz -w 20 "${CPANEL_HOST}" "${CPANEL_PORT}"
+        env:
+          CPANEL_HOST: ${{ secrets.CPANEL_HOST }}
+          CPANEL_PORT: ${{ secrets.CPANEL_PORT }}
+
       - name: Deploy to test folder
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -26,9 +34,10 @@ jobs:
           username: ${{ secrets.CPANEL_USER }}
           key: ${{ secrets.CPANEL_SSH_KEY }}
           passphrase: ${{ secrets.CPANEL_SSH_PASSPHRASE }}
-          source: "index.php,config.example.php"
+          source: "index.php,config.php,db.php,functions.php,header.php,footer.php,sidebar.php,assets,clients,applications,financials,collateral,scoring,committee,reports,logs,database"
           target: "/home/pubquest/public_html/risk.mindgames.md/test/"
           overwrite: true
+          timeout: 120s
 
   deploy-production:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -38,6 +47,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Check cPanel SSH connectivity
+        run: |
+          echo "Checking TCP connectivity to ${CPANEL_HOST}:${CPANEL_PORT}"
+          nc -vz -w 20 "${CPANEL_HOST}" "${CPANEL_PORT}"
+        env:
+          CPANEL_HOST: ${{ secrets.CPANEL_HOST }}
+          CPANEL_PORT: ${{ secrets.CPANEL_PORT }}
+
       - name: Deploy to production folder
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -46,6 +63,7 @@ jobs:
           username: ${{ secrets.CPANEL_USER }}
           key: ${{ secrets.CPANEL_SSH_KEY }}
           passphrase: ${{ secrets.CPANEL_SSH_PASSPHRASE }}
-          source: "index.php,config.example.php"
+          source: "index.php,config.php,db.php,functions.php,header.php,footer.php,sidebar.php,assets,clients,applications,financials,collateral,scoring,committee,reports,logs,database"
           target: "/home/pubquest/public_html/risk.mindgames.md/"
           overwrite: true
+          timeout: 120s

@@ -1,3 +1,10 @@
+<?php
+$showFetchFinancialButton = $showFetchFinancialButton ?? (
+    basename(str_replace('\\', '/', $_SERVER['SCRIPT_NAME'] ?? '')) === 'create.php'
+    || basename(str_replace('\\', '/', $_SERVER['SCRIPT_NAME'] ?? '')) === 'store.php'
+    || basename(str_replace('\\', '/', $_SERVER['SCRIPT_NAME'] ?? '')) === 'fetch_fin_data.php'
+);
+?>
 <?php if (!empty($errors)): ?>
     <div class="col-12">
         <div class="alert alert-danger">
@@ -13,7 +20,17 @@
 </div>
 <div class="col-md-3">
     <label class="form-label" for="idno">IDNO</label>
-    <input class="form-control" id="idno" name="idno" value="<?= e($client['idno'] ?? '') ?>">
+    <input class="form-control" id="idno" name="idno" inputmode="numeric" pattern="\d{5,20}" value="<?= e($client['idno'] ?? '') ?>">
+    <?php if (!empty($showFetchFinancialButton)): ?>
+        <button
+            class="btn btn-outline-primary btn-sm mt-2 w-100"
+            type="submit"
+            formaction="<?= e(url('clients/fetch_fin_data.php')) ?>"
+            formmethod="post"
+            formnovalidate
+        >Получить данные</button>
+        <div class="form-text">Создаст клиента и загрузит финансовые отчеты в fin_data.</div>
+    <?php endif; ?>
 </div>
 <div class="col-md-3">
     <label class="form-label" for="legal_form">Legal form</label>

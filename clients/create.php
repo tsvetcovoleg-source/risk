@@ -8,6 +8,7 @@ $pageTitle = 'Create client';
 $statuses = ['active', 'inactive', 'watchlist', 'rejected'];
 $client = ['status' => 'active'];
 $errors = [];
+$showFetchFinancialButton = true;
 
 require_once dirname(__DIR__) . '/header.php';
 require_once dirname(__DIR__) . '/sidebar.php';

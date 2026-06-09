@@ -57,6 +57,28 @@ CREATE TABLE IF NOT EXISTS clients (
     KEY idx_clients_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS fin_data (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    client_id INT UNSIGNED NOT NULL,
+    IDNO VARCHAR(50) NULL,
+    REPORT_KEY VARCHAR(50) NULL,
+    META_CSV LONGTEXT NULL,
+    BIL_CSV LONGTEXT NULL,
+    PNL_CSV LONGTEXT NULL,
+    EQT_CSV LONGTEXT NULL,
+    CF_CSV LONGTEXT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_fin_data_client_id (client_id),
+    KEY idx_fin_data_idno (IDNO),
+    KEY idx_fin_data_report_key (REPORT_KEY),
+    UNIQUE KEY uq_fin_data_client_report (client_id, REPORT_KEY),
+    CONSTRAINT fk_fin_data_client
+        FOREIGN KEY (client_id) REFERENCES clients (id)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS client_related_parties (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     client_id INT UNSIGNED NOT NULL,
